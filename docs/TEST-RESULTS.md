@@ -31,6 +31,12 @@ Mac上のNode.js 24.19.0、インストール済みGoogle Chrome、Playwrightに
 
 ## 検証できていないこと
 
-iPhone/iPad Safari、Mac Safari、Windows Edge/Chrome実機、実際のカメラ、Safariのファイル保存/共有、Google Sheetsへの実インポート、20枚大量処理のメモリ上限、容量枯渇時の実機動作、Service Workerの実配信更新、GitHub Actionsでの実デプロイは未検証。自動中止/タイムアウトのすべてのタイミングを網羅する試験も未実施です。手順は [DEVICE-TESTS.md](DEVICE-TESTS.md) を使用します。
+iPhone/iPad Safari、Mac Safari、Windows Edge/Chrome実機、実際のカメラ、Safariのファイル保存/共有、Google Sheetsへの実インポート、20枚大量処理のメモリ上限、容量枯渇時の実機動作、Service Workerの実配信更新、GitHub Actionsでの実デプロイは後述の追加検証で成功。自動中止/タイムアウトのすべてのタイミングを網羅する試験も未実施です。手順は [DEVICE-TESTS.md](DEVICE-TESTS.md) を使用します。
 
 最終機能試験の後、モバイルの紹介文と装飾が重ならないようCSSのみ調整し、再ビルドと静的監査を行っています。
+
+## GitHub Pages公開時の追加検証
+
+2026-11-06、[GitHub Actions](https://github.com/mov088420-cloud/tabi-receipts/actions/runs/42237295434) 上のLinux環境でも単体試験・ブラウザ4シナリオ・本番ビルド・静的監査がすべて成功しました。
+
+[https://mov088420-cloud.github.io/tabi-receipts/](https://mov088420-cloud.github.io/tabi-receipts/) をHTTPSで公開し、HTML/Manifest/OCR資産一覧を取得して確認。配信されたOCR資産のハッシュ一覧はローカルで検証したものと一致しました。公開ページをブラウザで開き「オフライン準備完了」を確認しました。iPhone実機検証は引き続き未実施です。

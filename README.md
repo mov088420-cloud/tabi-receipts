@@ -2,7 +2,7 @@
 
 iPhone優先の、ブラウザ内OCR・ローカル保存型レシート管理PWAです。React + TypeScript + Vite + Tesseract.js。既存レシートアプリのコードは使用していません。
 
-**状態：動作する初期版。MacのChromeで自動試験済み。iPhone/iPad Safari・Windows実機、実際に撮影したレシートの精度は未検証です。旅行で使う前に [実機チェックリスト](docs/DEVICE-TESTS.md) を実施してください。GitHubへの公開はまだ行っていません。**
+**状態：動作する初期版。MacのChromeで自動試験済み。iPhone/iPad Safari・Windows実機、実際に撮影したレシートの精度は未検証です。旅行で使う前に [実機チェックリスト](docs/DEVICE-TESTS.md) を実施してください。[公開アプリ](https://mov088420-cloud.github.io/tabi-receipts/) から利用できます。**
 
 ## 起動
 
@@ -49,7 +49,7 @@ pnpm preview
 | 一覧CSV/明細CSV、数式インジェクション対策 | 実装 |
 | 暗号化バックアップ、検証後の一括復元、画像削除、全削除 | 実装 |
 | Manifest、アイコン、Service Worker、全OCR資産の同一配信元キャッシュ | 実装 |
-| GitHub Pages用workflow/手順 | 作成済み。公開実行は未実施 |
+| GitHub Pages用workflow/手順 | 公開済み。GitHub Actionsで自動試験・配信に成功 |
 | iPhone/iPad Safari、Windows、ホーム画面インストール | 未検証 |
 | 台形補正、自動傾き検出、日本語OCR、PDF/HEIC変換 | 未実装。HEICはブラウザで開ける場合のみOCR可能、原本保存はJPEG/PNG/WebP限定 |
 | Google OAuth / Sheets APIの直接同期 | 初期版では未実装（仕様どおり） |

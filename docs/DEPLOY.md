@@ -1,6 +1,10 @@
 # 無料のGitHub Pagesへの公開
 
-このプロジェクトには配信先のGitHubリポジトリ/アカウントが設定されていません。公開済みURLはありません。次の手順で公開します。実データは端末のIndexedDBにあり、ビルド成果物には含まれません。
+公開済みURL：[https://mov088420-cloud.github.io/tabi-receipts/](https://mov088420-cloud.github.io/tabi-receipts/)
+
+ソース：[https://github.com/mov088420-cloud/tabi-receipts](https://github.com/mov088420-cloud/tabi-receipts)
+
+以下は再公開または別リポジトリへの公開手順です。実データは端末のIndexedDBにあり、ビルド成果物には含まれません。
 
 1. GitHubに新しい公開リポジトリを作成します。無料枠でのPages利用には公開リポジトリを基本とします。実データ・バックアップ・CSV・実レシート写真をリポジトリに入れないでください。
 2. このフォルダのソース、`pnpm-lock.yaml`、`.github/workflows/pages.yml`、`public`（生成される`ocr`フォルダは除く）、架空のテスト素材をアップロードします。`node_modules`、`dist`、`test-results`、`private`、`.backup`、CSVは含めません。Gitを使う場合、コミット前にステージされたファイルを必ず確認してください。`.gitignore`は補助であり、個人情報検査の代わりではありません。
@@ -11,7 +15,7 @@
 
 ビルドの相対パス `./` によりリポジトリ名を固定していません。独自の静的ホストにも `dist` の内容を配信できます。HTMLだけでなく `ocr`、`assets`、`icons`、`sw.js`、manifestをすべて含めてください。HTMLとJSを別々の世代にしないよう、ビルド成果物を一式で公開します。
 
-GitHub Actionsの動作はこの環境では実行していません。workflowは参照時に確認した公式ActionのコミットSHAに固定しています。更新時は公式リポジトリの履歴と差分を確認します。GitHub公式の仕様は [カスタムworkflow](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages) を参照してください。
+2026-11-06にGitHub Actionsで単体試験・ブラウザ試験・ビルド・配信が成功しました。[実行記録](https://github.com/mov088420-cloud/tabi-receipts/actions/runs/42237295434)。workflowは参照時に確認した公式ActionのコミットSHAに固定しています。更新時は公式リポジトリの履歴と差分を確認します。GitHub公式の仕様は [カスタムworkflow](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages) を参照してください。
 
 ## iPhone・iPadのホーム画面
 
