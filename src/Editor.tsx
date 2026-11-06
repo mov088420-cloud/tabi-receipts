@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {identifyPayer,reconciliation,validateReceipt,type Receipt,type Settings,type Payer} from './model';
+import {identifyPayer,reconciliation,validateReceipt,captureSourceLabels,type Receipt,type Settings,type Payer} from './model';
 import type {OcrResult} from './ocr';
 export function BlobImage({blob}:{blob:Blob}) {
  const [url,setUrl]=useState('');
@@ -10,7 +10,7 @@ type Props={initial:Receipt;settings:Settings;source?:Blob;ocr?:OcrResult;warnin
 export default function Editor({initial,settings,source,ocr,warnings=[],uncertain=[],onSave,onCancel,onDelete}:Props) {
  const [r,setR]=useState(initial),[keep,setKeep]=useState(!!initial.image),[checked,setChecked]=useState(false),[error,setError]=useState(''),[saving,setSaving]=useState(false);
  const image=source||initial.image;
- const update=(key:keyof Receipt,value:unknown)=>{setR(s=>({...s,[key]:value}));setChecked(false);};
+ const update=(key:keyof Receipt,value:unknown)=>{setR(s=>({...s,[key]:value,...(key==='capturedAt'?{captureSource:value?'manual' as const:'unknown' as const}:{})}));setChecked(false);};
  function field(key:keyof Receipt,label:string,type='text',placeholder='未確認',wide=false) {
    const low=!!ocr&&(uncertain.includes(key)||ocr.confidence<85||!r[key]);
    return <label className={`${wide?'wide ':''}${low?'uncertain':''}`} key={key}><span>{label}{low&&<small>要確認</small>}</span><input aria-label={label} type={type} value={String(r[key]??'')} placeholder={placeholder} inputMode={['total','subtotal','discount','tax','service','tip'].includes(key)?'decimal':key==='last4'?'numeric':undefined} maxLength={key==='last4'?4:500} onChange={e=>update(key,e.target.value)}/></label>;
@@ -28,6 +28,7 @@ export default function Editor({initial,settings,source,ocr,warnings=[],uncertai
  {ocr&&<div className="metrics"><span>処理時間 <b>{ocr.seconds.toFixed(1)}秒</b></span><span>OCR信頼度 <b>{ocr.confidence}%</b></span><span>処理画像 <b>{ocr.width} × {ocr.height}</b></span></div>}
  {ocr&&<details><summary>認識したテキスト（一時表示）</summary><textarea aria-label="OCR結果" readOnly value={ocr.text}/><p className="muted">全文は保存されません。信頼度は画像全体の値で、各項目の正しさを保証しません。</p></details>}
  </aside><div className="panel form-panel"><div className="notice">{(warnings.length?warnings:['内容を確認して保存してください。']).map((w,i)=><p key={i}>{w}</p>)}</div>
+ <div className="notice"><b>写真の日時</b><p>{captureSourceLabels[r.captureSource||'unknown']}{r.captureSource==='camera'?'。シャッター時刻ではなく、撮影後アプリに戻った時刻です。':''}</p>{field('capturedAt','撮影日時','text','例：2026-11-07T14:30:00+08:00',true)}<p className="muted">末尾の +08:00 はシンガポール、+09:00 は日本の時差です。時差が付いていない写真はタイムゾーン不明として扱います。</p><p>取り込み日時：<time>{r.importedAt||'記録なし'}</time></p></div>
  <div className="fields">{field('store','店舗名','text','店舗名を入力',true)}{field('date','取引日付','date')}{field('time','時刻','time')}{field('address','店舗住所','text','住所を入力',true)}
  {field('total','支払金額')}<label><span>通貨</span><select aria-label="通貨" value={r.currency} onChange={e=>update('currency',e.target.value)}><option value="">未判定</option><option>SGD</option><option>JPY</option><option>USD</option></select></label>
  {field('subtotal','小計')}{field('discount','割引')}{field('tax','GST・税額')}<label><span>税区分</span><select value={r.taxMode} onChange={e=>update('taxMode',e.target.value)}><option value="unknown">未確認</option><option value="included">小計に税込み</option><option value="excluded">小計に税別</option></select></label>{field('service','サービス料')}{field('tip','チップ')}

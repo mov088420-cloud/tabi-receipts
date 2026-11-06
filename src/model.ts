@@ -5,6 +5,7 @@ export type Settings = { selfName: string; wifeName: string; cards: Card[] };
 export type Item = { id: string; name: string; quantity: string; unitPrice: string; amount: string };
 export type Receipt = {
  id: string; createdAt: string; date: string; time: string; store: string; address: string;
+ capturedAt: string; importedAt: string; captureSource: 'unknown'|'exif'|'camera'|'manual';
  total: string; currency: Currency; subtotal: string; discount: string; tax: string;
  service: string; tip: string; taxMode: 'unknown'|'included'|'excluded';
  payment: string; brand: string; last4: string; transaction: string; memo: string;
@@ -12,7 +13,14 @@ export type Receipt = {
 };
 export const initialSettings: Settings = { selfName:'本人', wifeName:'妻', cards:[] };
 export function emptyReceipt(): Receipt {
- return {id:crypto.randomUUID(),createdAt:new Date().toISOString(),date:'',time:'',store:'',address:'',total:'',currency:'',subtotal:'',discount:'',tax:'',service:'',tip:'',taxMode:'unknown',payment:'',brand:'',last4:'',transaction:'',memo:'',payer:'unknown',user:'',items:[]};
+ return {id:crypto.randomUUID(),createdAt:new Date().toISOString(),capturedAt:'',importedAt:'',captureSource:'unknown',date:'',time:'',store:'',address:'',total:'',currency:'',subtotal:'',discount:'',tax:'',service:'',tip:'',taxMode:'unknown',payment:'',brand:'',last4:'',transaction:'',memo:'',payer:'unknown',user:'',items:[]};
+}
+export const captureSourceLabels={unknown:'不明',exif:'写真の撮影情報',camera:'カメラからの取り込み時刻（目安）',manual:'手入力'};
+// An EXIF timestamp may lack an offset. Keep it as a wall-clock time; never guess a zone.
+export function validPhotoTimestamp(value:string):boolean {
+ const m=/^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d{3})?(Z|[+-](?:0\d|1[0-4]):[0-5]\d)?$/.exec(value);
+ if(!m||!Number.isFinite(Date.parse(m[1]))||new Date(m[1]).toISOString().slice(0,10)!==m[1])return false;
+ return !m[5]||!/[+-]14:(?!00)/.test(m[5]);
 }
 export const currencies: Currency[]=['','SGD','JPY','USD'];
 export function minor(value: string, currency: Currency): bigint | null {
@@ -75,6 +83,9 @@ function text(o:Record<string,unknown>,key:string,max=500):string {
 export function validateReceipt(input:unknown):Receipt {
  const o=obj(input); const r=emptyReceipt();
  for(const k of ['id','createdAt','date','time','store','address','total','subtotal','discount','tax','service','tip','payment','brand','last4','transaction','memo','user'] as const) r[k]=text(o,k,k==='memo'?2000:500);
+ for(const k of ['capturedAt','importedAt'] as const){r[k]=o[k]===undefined?'':text(o,k,40);if(r[k]&&!validPhotoTimestamp(r[k]))throw new Error('撮影・取り込み日時を確認してください。');}
+ r.captureSource=o.captureSource===undefined?'unknown':o.captureSource as Receipt['captureSource'];
+ if(!Object.hasOwn(captureSourceLabels,r.captureSource)||(!r.capturedAt&&r.captureSource!=='unknown')||(r.capturedAt&&r.captureSource==='unknown'))throw new Error('撮影日時の取得方法を確認してください。');
  if(!/^[\w-]{1,80}$/.test(r.id)||!Number.isFinite(Date.parse(r.createdAt))) throw new Error('ID・登録日時が不正です。');
  if(!currencies.includes(o.currency as Currency)) throw new Error('通貨が不正です。'); r.currency=o.currency as Currency;
  if(!['self','wife','unknown'].includes(o.payer as string)) throw new Error('支払者が不正です。'); r.payer=o.payer as Payer;
