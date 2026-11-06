@@ -1,0 +1,12 @@
+node_modules/
+dist/
+public/ocr/
+test-results/
+playwright-report/
+*.tsbuildinfo
+.DS_Store
+.env*
+*.backup
+*.csv
+private/
+outputs/

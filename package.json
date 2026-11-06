@@ -1,0 +1,35 @@
+{
+  "name": "tabi-receipts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "assets": "node scripts/prepare-assets.mjs",
+    "build": "pnpm assets && node scripts/licenses.mjs && tsc -b && vite build && node scripts/build-sw.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "fixtures": "node scripts/make-fixtures.mjs",
+    "audit:static": "node scripts/audit-static.mjs"
+  },
+  "packageManager": "pnpm@11.25.0",
+  "engines": { "node": ">=24" },
+  "dependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tesseract.js": "7.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "sharp": "0.35.5",
+    "typescript": "7.0.2",
+    "vite": "8.3.6",
+    "vitest": "5.1.0"
+  }
+}

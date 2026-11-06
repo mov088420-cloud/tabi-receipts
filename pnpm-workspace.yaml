@@ -1,0 +1,6 @@
+packages:
+  - .
+allowBuilds:
+  tesseract.js: false
+  esbuild: true
+  sharp: false
