@@ -1,4 +1,4 @@
-import {initialSettings,validateReceipt,validateSettings,type Receipt,type Settings} from './model';
+import {initialSettings,withoutImages,validateReceipt,validateSettings,type Receipt,type Settings} from './model';
 import {emptySheetsConfig,validateSheetsConfig,makeSheetJob,type SheetsConfig,type SheetJob} from './sheets-data';
 let connection:Promise<IDBDatabase>|undefined;
 function db() {
@@ -30,7 +30,7 @@ export async function replaceData(receipts:Receipt[],settings:Settings) {
  if(new Set(validated.map(r=>r.id)).size!==validated.length) throw new Error('重複するレシートIDがあります。');
  return write(['receipts','settings','sheetQueue'],tx=>{const rs=tx.objectStore('receipts');rs.clear();for(const r of validated)rs.put(r);const st=tx.objectStore('settings');st.put(profile,'profile');st.delete('sheets');tx.objectStore('sheetQueue').clear();});
 }
-export const eraseImages=()=>write(['receipts'],tx=>{const req=tx.objectStore('receipts').openCursor();req.onsuccess=()=>{const cursor=req.result;if(cursor){const value=cursor.value;delete value.image;cursor.update(value);cursor.continue();}};});
+export const eraseImages=()=>write(['receipts'],tx=>{const req=tx.objectStore('receipts').openCursor();req.onsuccess=()=>{const cursor=req.result;if(cursor){cursor.update(withoutImages(cursor.value));cursor.continue();}};});
 export const getSheetsConfig=async()=>await read<SheetsConfig|undefined>('settings','sheets')||{...emptySheetsConfig};
 export const sheetQueue=()=>read<SheetJob[]>('sheetQueue');
 export const getSheetJob=(id:string)=>read<SheetJob|undefined>('sheetQueue',id);

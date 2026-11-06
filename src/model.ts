@@ -3,19 +3,23 @@ export type Currency = '' | 'SGD' | 'JPY' | 'USD';
 export type Card = { id: string; payer: 'self'|'wife'; brand: string; last4: string; alias: string };
 export type Settings = { selfName: string; wifeName: string; cards: Card[] };
 export type Item = { id: string; name: string; quantity: string; unitPrice: string; amount: string };
+export type ReceiptPhoto = {capturedAt:string;importedAt:string;captureSource:'unknown'|'exif'|'camera'|'manual';image?:Blob};
+export const maxReceiptPhotos=6;
 export type Receipt = {
  id: string; createdAt: string; date: string; time: string; store: string; address: string;
  capturedAt: string; importedAt: string; captureSource: 'unknown'|'exif'|'camera'|'manual';
  total: string; currency: Currency; subtotal: string; discount: string; tax: string;
  service: string; tip: string; taxMode: 'unknown'|'included'|'excluded';
  payment: string; brand: string; last4: string; transaction: string; memo: string;
- payer: Payer; user: string; items: Item[]; image?: Blob;
+ payer: Payer; user: string; items: Item[]; image?: Blob; photos?:ReceiptPhoto[];
 };
 export const initialSettings: Settings = { selfName:'本人', wifeName:'妻', cards:[] };
 export function emptyReceipt(): Receipt {
- return {id:crypto.randomUUID(),createdAt:new Date().toISOString(),capturedAt:'',importedAt:'',captureSource:'unknown',date:'',time:'',store:'',address:'',total:'',currency:'',subtotal:'',discount:'',tax:'',service:'',tip:'',taxMode:'unknown',payment:'',brand:'',last4:'',transaction:'',memo:'',payer:'unknown',user:'',items:[]};
+ return {id:createRecordId(),createdAt:new Date().toISOString(),capturedAt:'',importedAt:'',captureSource:'unknown',date:'',time:'',store:'',address:'',total:'',currency:'',subtotal:'',discount:'',tax:'',service:'',tip:'',taxMode:'unknown',payment:'',brand:'',last4:'',transaction:'',memo:'',payer:'unknown',user:'',items:[]};
 }
 export const captureSourceLabels={unknown:'不明',exif:'写真の撮影情報',camera:'カメラからの取り込み時刻（目安）',manual:'手入力'};
+export function receiptImages(r:Receipt):Blob[] {return r.photos?.flatMap(p=>p.image?[p.image]:[])??(r.image?[r.image]:[]);}
+export function withoutImages(r:Receipt):Receipt {const {image:_image,...rest}=r;return {...rest,...(r.photos?{photos:r.photos.map(({image:_image,...p})=>p)}:{})};}
 // An EXIF timestamp may lack an offset. Keep it as a wall-clock time; never guess a zone.
 export function validPhotoTimestamp(value:string):boolean {
  const m=/^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d{3})?(Z|[+-](?:0\d|1[0-4]):[0-5]\d)?$/.exec(value);
@@ -48,6 +52,12 @@ export function identifyPayer(brand:string,last4:string,cards:Card[]):Payer {
 export function containsSensitiveText(value: string): boolean {
  const normalized=value.normalize('NFKC').replace(/[‐‑–—−]/g,'-');
  return /(?:\d[\s-]?){13,19}/.test(normalized) || /(?:\b(?:cvv|cvc|cid|expiry|expires|exp\.?\s*date)\b|有効期限|セキュリティコード)\s*[:#]?\s*\d/i.test(normalized);
+}
+// Keep UUIDs compatible with the same sensitive-number checks used by the deployed
+// Google bridge. A random UUID can otherwise resemble a 13–19 digit card number.
+export function createRecordId():string {
+ for(let attempt=0;attempt<16;attempt++){const id=crypto.randomUUID();if(!containsSensitiveText(id))return id;}
+ throw new Error('識別番号を作成できませんでした。もう一度お試しください。');
 }
 export function reconciliation(r:Receipt):string[] {
  const messages:string[]=[]; const read=(s:string)=>minor(s,r.currency);
@@ -103,6 +113,15 @@ export function validateReceipt(input:unknown):Receipt {
  if(o.image!==undefined) {
    if(!(o.image instanceof Blob)||!['image/png','image/jpeg','image/webp'].includes(o.image.type)||o.image.size>25*1024*1024) throw new Error('保存画像の形式・サイズが不正です。');
    r.image=o.image;
+ }
+ if(o.photos!==undefined) {
+   if(!Array.isArray(o.photos)||o.photos.length<1||o.photos.length>maxReceiptPhotos||o.image!==undefined)throw new Error('写真は1件につき6枚までです。');
+   r.photos=o.photos.map(value=>{
+     const p=obj(value);const capturedAt=text(p,'capturedAt',40),importedAt=text(p,'importedAt',40),captureSource=p.captureSource as ReceiptPhoto['captureSource'];
+     if((capturedAt&&!validPhotoTimestamp(capturedAt))||(importedAt&&!validPhotoTimestamp(importedAt))||!Object.hasOwn(captureSourceLabels,captureSource)||(!capturedAt&&captureSource!=='unknown')||(capturedAt&&captureSource==='unknown'))throw new Error('写真ごとの日時を確認してください。');
+     if(p.image!==undefined&&(!(p.image instanceof Blob)||!['image/png','image/jpeg','image/webp'].includes(p.image.type)||p.image.size>25*1024*1024))throw new Error('保存画像の形式・サイズが不正です。');
+     return {capturedAt,importedAt,captureSource,...(p.image instanceof Blob?{image:p.image}:{})};
+   });
  }
  return r;
 }

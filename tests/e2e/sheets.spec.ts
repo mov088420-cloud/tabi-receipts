@@ -29,12 +29,12 @@ test('opt-in Google connection and durable offline retry without image upload',a
  await expect(page.getByRole('button',{name:'接続を確認して有効にする'})).toBeDisabled();
  await page.getByLabel('確認して保存した項目をGoogleへ自動送信し、この端末に連携キーを保存する').check();
  await page.getByRole('button',{name:'接続を確認して有効にする'}).click();await expect(page.getByRole('link',{name:'保存先のスプレッドシートを開く ↗'})).toHaveAttribute('href',sheetUrl);
- await page.getByRole('button',{name:'ホーム',exact:true}).click();await page.getByLabel('ホームから画像を選ぶ').setInputFiles('tests/fixtures/receipt.png');await page.getByRole('button',{name:'手入力に切り替える'}).click();
+ await page.getByRole('button',{name:'ホーム',exact:true}).click();await page.getByLabel('ホームから画像を選ぶ').setInputFiles('tests/fixtures/receipt-top.png');await page.getByLabel('続きの画像を追加',{exact:true}).setInputFiles('tests/fixtures/receipt-bottom.png');await page.getByRole('button',{name:'手入力に切り替える'}).click();
  await expect(page.getByLabel('撮影日時',{exact:true})).toHaveValue('');
  await page.getByLabel('店舗名',{exact:true}).fill('Queue example');await page.getByLabel('支払金額',{exact:true}).fill('4.20');await page.getByLabel('通貨',{exact:true}).selectOption('SGD');await page.getByLabel('原本画像をこの端末に保存する').check();
  await page.getByLabel('金額・通貨・支払者を原本と照合しました').check();await page.getByRole('button',{name:'確認して保存',exact:true}).click();
  await expect(page.getByLabel('Googleへの保存状況')).toContainText('未送信分はこの端末に残っています');
- expect(jobs).toHaveLength(1);expect(jobs[0].row[20]).toBe('');expect(jobs[0].row[22]).toMatch(/^\d{4}-/);expect(jobs[0]).not.toHaveProperty('image');expect(jobs[0]).not.toHaveProperty('text');
+ expect(jobs).toHaveLength(1);expect(jobs[0].row[20]).toBe('');expect(jobs[0].row[22]).toMatch(/^\d{4}-/);expect(jobs[0]).not.toHaveProperty('image');expect(jobs[0]).not.toHaveProperty('text');expect(jobs[0]).not.toHaveProperty('photos');expect(jobs[0].row).toHaveLength(24);await expect(page.locator('.receipt-row')).toHaveCount(1);
  await context.setOffline(true);await page.reload();await expect(page.getByLabel('Googleへの保存状況')).toContainText('送信待ち 1件');
  fail=false;await context.setOffline(false);await expect(page.getByLabel('Googleへの保存状況')).toContainText('保存を確認しました');expect(jobs).toHaveLength(2);expect(jobs[1].revision).toBe(jobs[0].revision);
  await page.getByRole('button',{name:'設定',exact:true}).click();await page.getByRole('button',{name:'自動送信を停止する'}).click();await expect(page.getByText('◎ この端末だけに保存',{exact:true})).toBeVisible();

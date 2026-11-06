@@ -9,3 +9,9 @@ function receipt(extra=[]) {
 await sharp(receipt()).png().toFile('tests/fixtures/receipt.png');
 await sharp(receipt(Array.from({length:45},(_,i)=>`REFERENCE NOTE ${i+1}`))).png().toFile('tests/fixtures/long-receipt.png');
 await sharp(receipt()).rotate(90).png().toFile('tests/fixtures/rotated-receipt.png');
+// Two overlapping photos of one fictional receipt, plus faint/tilted print for OCR regression.
+const source=await sharp(receipt()).png().toBuffer();
+await sharp(source).extract({left:0,top:0,width:1000,height:430}).png().toFile('tests/fixtures/receipt-top.png');
+await sharp(source).extract({left:0,top:325,width:1000,height:591}).png().toFile('tests/fixtures/receipt-bottom.png');
+await sharp(source).rotate(3,{background:'#fff'}).linear(.35,150).png().toFile('tests/fixtures/faint-skewed-receipt.png');
+await sharp({create:{width:2000,height:1516,channels:3,background:'#777'}}).composite([{input:source,left:500,top:300}]).png().toFile('tests/fixtures/receipt-with-background.png');

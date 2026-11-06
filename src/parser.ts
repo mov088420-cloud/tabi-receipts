@@ -1,14 +1,18 @@
-import { emptyReceipt, identifyPayer, type Settings, type Receipt, containsSensitiveText } from './model';
+import {createRecordId, emptyReceipt, identifyPayer, type Settings, type Receipt, containsSensitiveText } from './model';
 export type Parsed = {receipt:Receipt; warnings:string[]; uncertain:string[]};
 export function parseReceipt(raw:string,settings:Settings):Parsed {
  const r=emptyReceipt(); const warnings=['OCRの候補です。原本と照合してから保存してください。']; const uncertain:string[]=[];
  const lines=raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
  const safe=(s:string)=>containsSensitiveText(s)?'':s;
- const lastMoney=(line:string)=>line.match(/(-?\d[\d,]*\.\d{2})\s*(?:[A-Z])?$/)?.[1].replace(/,/g,'')||'';
+ const lastMoney=(line:string)=>line.match(/(-?\d[\d,]*\.\d{2})\s*(?:SGD|USD|JPY|S\$|US\$|[A-Z])?$/i)?.[1].replace(/,/g,'')||'';
+ const totalLabel=/^(?:grand\s+total|total(?:\s+(?:amount|due|paid|payable))?|amount\s+(?:due|paid|payable)|net\s+total|balance\s+due)(?:\s*\((?:incl\.?|including|inclusive\s+of)\s+(?:gst|tax)\))?\s*(?:[:：=]\s*)?(?:SGD|S\$|USD|US\$|JPY|\$)?\s*$/i;
  const totalCandidates:string[]=[];
- for(const line of lines) {
-   const money=lastMoney(line);
-   if(/^(?:grand\s+total|total(?:\s+(?:sgd|s\$|usd|jpy))?|amount\s+(?:due|paid)|net\s+total|balance\s+due)\s*[:$\s\d]/i.test(line)&&money) totalCandidates.push(money);
+ for(let lineIndex=0;lineIndex<lines.length;lineIndex++) {
+   const line=lines[lineIndex],money=lastMoney(line);
+   const amountStart=money?line.search(/-?\d[\d,]*\.\d{2}\s*(?:SGD|USD|JPY|S\$|US\$|[A-Z])?$/i):-1;
+   const nextLine=lines[lineIndex+1]||'';
+   if(totalLabel.test(line)&&/^(?:SGD|USD|JPY|S\$|US\$|\$)?\s*-?\d[\d,]*\.\d{2}\s*(?:SGD|USD|JPY)?$/i.test(nextLine)){totalCandidates.push(lastMoney(nextLine));lineIndex++;continue;}
+   if(money&&totalLabel.test(line.slice(0,amountStart))) totalCandidates.push(money);
    else if(/\bsub[ -]?total\b/i.test(line)&&money) r.subtotal=money;
    else if(/\b(?:discount|saving)\b/i.test(line)&&money) r.discount=money.replace('-','');
    else if(/\b(?:gst|vat|tax)\b/i.test(line)&&money) r.tax=money;
@@ -16,7 +20,7 @@ export function parseReceipt(raw:string,settings:Settings):Parsed {
    else if(/\b(?:tip|gratuity)\b/i.test(line)&&money) r.tip=money;
    else if(money&&!/\b(?:cash|change|balance|total|visa|mastercard|payment|tender|gst|tax|service|rounding)\b/i.test(line)) {
      const m=line.match(/^(?:(\d+(?:\.\d{1,3})?)\s+(?:x\s+)?)?(.+?)\s+(?:(\d+\.\d{2})\s+)?(-?\d[\d,]*\.\d{2})\s*$/i);
-     if(m&&safe(m[2])) r.items.push({id:crypto.randomUUID(),name:m[2],quantity:m[1]||'',unitPrice:m[3]||'',amount:m[4].replace(/,/g,'')});
+     if(m&&safe(m[2])) r.items.push({id:createRecordId(),name:m[2],quantity:m[1]||'',unitPrice:m[3]||'',amount:m[4].replace(/,/g,'')});
    }
  }
  const uniqueTotals=[...new Set(totalCandidates)];
