@@ -1,10 +1,11 @@
+import {isPaymentLabel} from './payment-label';
 import {labelledCardTails,labelledAddresses,identityAddressLine} from './receipt-identity';
 import {receiptDateCandidates} from './receipt-dates';
 import {createRecordId,emptyReceipt,identifyPayer,type Settings,type Receipt,type Item,containsSensitiveText} from './model';
 export type Parsed={receipt:Receipt;warnings:string[];uncertain:string[]};
 const safe=(s:string)=>containsSensitiveText(s)?'':s;
 const moneyToken='(?:\\d{1,3}(?:,\\d{3})+|\\d+)\\s*\\.\\s*\\d{2}';
-const currencyToken='(?:SGD|USD|JPY|S\\$|US\\$|\\$)';
+const currencyToken='(?:SGD|USD|JPY|SG\\$|S\\$|US\\$|\\$)';
 const moneyEnd=new RegExp(`(^|[^\\w.,+\\-])(?:${currencyToken}\\s*)?(-?${moneyToken})\\s*(?:${currencyToken}|[A-Z])?$`,'i');
 const moneyOnly=new RegExp(`^\\s*(?:${currencyToken}\\s*)?(-?${moneyToken})\\s*(?:${currencyToken})?\\s*$`,'i');
 const stripMoney=(s:string)=>s.replace(/[,\s]/g,'');
@@ -13,8 +14,7 @@ const normalizedLabel=(s:string)=>s.toLowerCase().replace(/\bt[o0]ta[l1i!|](?=\s
 type MoneyKey='total'|'subtotal'|'discount'|'tax'|'service'|'tip';
 function moneyLabel(s:string):MoneyKey|undefined {
  const label=normalizedLabel(s);
- if(/^(?:card payment|payment by)\s+(?:visa|master\s*card|amex|jcb|unionpay)$/.test(label))return 'total';
- if(/^(?:grand total|total(?: amount)?(?: due|paid|payable)?|amount (?:due|paid|payable)|net(?:t)? total|balance due)$/.test(label))return 'total';
+ if(isPaymentLabel(s))return 'total';
  if(/^sub[ -]?total$/.test(label))return 'subtotal';
  if(/^(?:(?:total|member|promo) )?(?:discount|savings?)(?: \d+(?:\.\d+)?\s*%)?$/.test(label))return 'discount';
  if(new RegExp(`^(?:gst|vat|tax)\\s+\\d+(?:\\.\\d+)?\\s*%\\s+of\\s+${moneyToken}$`,'i').test(label))return 'tax';
@@ -56,7 +56,7 @@ function parseDates(lines:string[],warnings:string[],uncertain:string[]):string 
 const trimDecoration=(s:string)=>s.replace(/^[|{}<>=_%:;~]+\s*|\s+[|{}<>=_%:;~]+$/g,'').trim();
 // Rejoin only explicit table headings split by OCR; never reorder arbitrary lines.
 function receiptLines(raw:string):string[]{
- const input=raw.normalize('NFKC').split(/\r?\n/).map(l=>trimDecoration(l.replace(/[‐‑–—−]/g,'-').replace(/\u00a0/g,' '))).filter(Boolean),out:string[]=[];
+ const input=raw.normalize('NFKC').split(/\r?\n/).map(l=>trimDecoration(l.replace(/\((SGD|USD|JPY|SG\$|S\$|US\$)\)/gi,' $1 ').replace(/[‐‑–—−]/g,'-').replace(/\u00a0/g,' '))).filter(Boolean),out:string[]=[];
  for(let i=0;i<input.length;i++){
    if(/^(?:tax\s+)?(?:item|description|product)(?:\s+(?:qty|quantity|unit|price))*$/i.test(input[i])&&/^(?:total|amount)$/i.test(input[i+1]||'')){out.push(input[i]+' '+input[++i]);}
    else out.push(input[i]);
@@ -75,14 +75,15 @@ export function parseReceipt(raw:string,settings:Settings):Parsed {
    const tail=moneyAtEnd(lines[i]),field=moneyLabel(tail?tail.prefix:lines[i]);
    if(!field)continue;
    let nextIndex=i+1;
-   if(!tail&&new RegExp(`^(?:${currencyToken}|[-=_]{2,})$`,'i').test(lines[nextIndex]||''))nextIndex++;
+   if(!tail)while(nextIndex<=i+3&&new RegExp(`^(?:${currencyToken}|[-=_]{2,})$`,'i').test(lines[nextIndex]||''))nextIndex++;
+   if(nextIndex>i+3)continue;
    const next=moneyOnly.exec(lines[nextIndex]||'');
    const amount=tail?.amount||(next?stripMoney(next[1]):'');
    used.add(i);if(amount){candidates[field].push(field==='discount'?amount.replace(/^-/,''):amount);if(!tail&&next)for(let j=i+1;j<=nextIndex;j++)used.add(j);}
  }
  const labels:Record<MoneyKey,string>={total:'支払金額',subtotal:'小計',discount:'割引',tax:'税額',service:'サービス料',tip:'チップ'};
  for(const field of Object.keys(candidates) as MoneyKey[]){const values=[...new Set(candidates[field].map(v=>Number(v)===0?'0.00':v))];if(values.length===1)r[field]=values[0];else if(values.length>1){warnings.push(`${labels[field]}の候補が複数あります。原本で確認してください。`);uncertain.push(field);}}
- const currencyMatches=[...new Set([...(text.match(/\b(?:SGD|USD|JPY)\b/gi)||[]).map(s=>s.toUpperCase()),...(/(?:^|[^A-Z])S\$/i.test(text)?['SGD']:[]),...(/\bUS\$/i.test(text)?['USD']:[])])];
+ const currencyMatches=[...new Set([...(text.match(/\b(?:SGD|USD|JPY)\b/gi)||[]).map(s=>s.toUpperCase()),...(/(?:^|[^A-Z])(?:SG|S)\$/i.test(text)?['SGD']:[]),...(/\bUS\$/i.test(text)?['USD']:[])])];
  if(currencyMatches.length===1)r.currency=currencyMatches[0] as Receipt['currency'];
  r.date=parseDates(lines,warnings,uncertain);
 

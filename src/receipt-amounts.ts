@@ -1,13 +1,14 @@
+import {isPaymentLabel} from './payment-label';
 import {containsSensitiveText,type Currency} from './model';
 export type PaymentCandidate={value:string;printed:string;currency:Currency;placement:'same-line'|'after-label'|'before-label'|'unlabelled'};
 const number='-?(?:\\d{1,3}(?:,\\d{3})+|\\d+)\\s*\\.\\s*\\d{2}';
-const currency='(?:SGD|USD|JPY|US\\$|S\\$|\\$)';
+const currency='(?:SGD|USD|JPY|US\\$|SG\\$|S\\$|\\$)';
 const onlyAmount=new RegExp(`^(?:${currency}\\s*)?(${number})(?:\\s*${currency})?\\s*[)]?$`,'i');
 const payable=/^(?:(?:grand|net|nett)\s+)?t[o0]ta[l1i!|](?=$|\s|[:=.])|^(?:amount\s+(?:due|paid|payable)|balance\s+due|card\s+payment|payment\s+by)\b/i;
 const nonPayment=/^t[o0]ta[l1i!|]\s+(?:quantity|qty|items?|savings?|discount|tax|gst|vat|service|points|cash|tender)\b/i;
 const normalize=(s:string)=>s.replace(/[,\s]/g,'');
 function currencies(text:string):Currency[]{
- return [...new Set([...(text.match(/\b(?:SGD|USD|JPY)(?=\b|\d)/gi)||[]).map(s=>s.toUpperCase() as Currency),...(/(?:^|[^A-Z])S\$/i.test(text)?['SGD' as const]:[]),...(/\bUS\$/i.test(text)?['USD' as const]:[])])];
+ return [...new Set([...(text.match(/\b(?:SGD|USD|JPY)(?=\b|\d)/gi)||[]).map(s=>s.toUpperCase() as Currency),...(/(?:^|[^A-Z])(?:SG|S)\$/i.test(text)?['SGD' as const]:[]),...(/\bUS\$/i.test(text)?['USD' as const]:[])])];
 }
 // These are explicit review choices, NEVER automatic total or currency guesses.
 // Amounts near a label can belong to another row; retain the original context
@@ -23,7 +24,7 @@ export function receiptPaymentCandidates(raw:string):PaymentCandidate[]{
  };
  for(let i=0;i<lines.length;i++){
    const label=lines[i].replace(/^[|*_=\s]+/,'');
-   if(!payable.test(label)||nonPayment.test(label)||containsSensitiveText(label))continue;
+   if((!payable.test(label)&&!isPaymentLabel(label))||nonPayment.test(label)||containsSensitiveText(label))continue;
    const paymentPart=label.replace(/\((?:incl\.?|including|inclusive of)\s+(?:gst|tax)\)/gi,'').split(/\b(?:gst|vat|tax|change|cash tendered|service charge|tip|savings?|discount)\b/i)[0];
    const inline=[...paymentPart.matchAll(new RegExp(`(?:^|[\\s$:(]|\\b(?:SGD|USD|JPY))(${number})(?=$|\\s|[)])`,'gi'))];
    for(const match of inline)add(match[1],i,i,'same-line');
