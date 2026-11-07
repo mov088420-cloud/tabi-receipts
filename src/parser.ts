@@ -1,3 +1,4 @@
+import {labelledCardTails,labelledAddresses,identityAddressLine} from './receipt-identity';
 import {receiptDateCandidates} from './receipt-dates';
 import {createRecordId,emptyReceipt,identifyPayer,type Settings,type Receipt,type Item,containsSensitiveText} from './model';
 export type Parsed={receipt:Receipt;warnings:string[];uncertain:string[]};
@@ -21,8 +22,8 @@ function moneyLabel(s:string):MoneyKey|undefined {
  if(/^(?:(?:\d+(?:\.\d+)?\s*%)\s*)?(?:service(?: charge| fee)?|svc(?: chg| charge)?|s\/?c)(?: (?:@\s*)?\d+(?:\.\d+)?\s*%)?$/.test(label))return 'service';
  if(/^(?:tips?|gratuity)$/.test(label))return 'tip';
 }
-const administrative=/^(?:tax\s+invoice|receipt|invoice|transaction|date|time|tel(?:ephone)?|phone|fax|gst\s*(?:reg|no)|uen|table|server|cashier|pax|order|bill|auth|approval|terminal|batch|pos\b|staff\b|operator\b|merchant\s*id|reference|ref\b|rrn\b|aid\b|tvr\b|tsi\b|www\.|https?:|thank\b|welcome\b|customer\s*copy|merchant\s*copy)/i;
-const addressLine=/(?:\b(?:road|street|avenue|drive|boulevard|lane|crescent|highway|gateway)\b|\b\d+\s+.+\b(?:rd|st|ave|dr|blvd|ln)\b|\b(?:singapore|s'pore)\s*\d{6}\b|^#\d{1,3}-\d{1,4}\b)/i;
+const administrative=/^(?:tax\s+invoice|receipt|invoice|transaction|address|date|time|tel(?:ephone)?|phone|fax|gst\s*(?:reg|no)|uen|table|server|cashier|pax|order|bill|auth|approval|terminal|batch|pos\b|staff\b|operator\b|merchant\s*id|reference|ref\b|rrn\b|aid\b|tvr\b|tsi\b|www\.|https?:|thank\b|welcome\b|customer\s*copy|merchant\s*copy)/i;
+const addressLine=identityAddressLine;
 const summaryLine=/^(?:(?:\d+(?:\.\d+)?\s*%\s*)?(?:sub[ -]?total|grand\s+total|total|amount\s+(?:due|paid|payable)|net(?:t)?\s+total|balance|gst|vat|tax|service|svc|s\/c|discount|savings?|tip|gratuity)|cash\b|change\b|rounding\b|visa\b|master\s*card\b|amex\b|payment\b|tender\b|paid\b)/i;
 const itemHeader=/^tax\s+ite[nm]\s+total$|\b(?:item|description|product)\b.*\b(?:qty|quantity|price|amount|total)\b|^\s*(?:qty|quantity)\b.*\b(?:item|description|product)\b/i;
 const numericProductRow=/^[\d\s.,*x×@'’"=:+\-£OIlZz]*(?:EA|EN|EACH|PCS?)[\d\s.,*x×@'’"=:+\-£OIlZz]*$/i;
@@ -87,7 +88,7 @@ export function parseReceipt(raw:string,settings:Settings):Parsed {
 
  const times=[...new Set(lines.filter(l=>!/^\s*(?:open|opening|hours|business hours|closed)\b/i.test(l)).flatMap(l=>[...l.matchAll(/\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\s*(AM|PM)?\b/gi)].flatMap(m=>{let h=Number(m[1]);if(m[3]){if(h<1||h>12)return [];h=h%12+(m[3].toUpperCase()==='PM'?12:0);}return [`${String(h).padStart(2,'0')}:${m[2]}`];})))];if(times.length===1)r.time=times[0];else if(times.length>1)uncertain.push('time');
  const brands=[...new Set((text.match(/\b(?:visa|master\s*card|amex|american express|unionpay|jcb)\b/gi)||[]).map(b=>b.toUpperCase().replace(/MASTER\s+CARD/,'MASTERCARD').replace('AMERICAN EXPRESS','AMEX')))];if(brands.length===1)r.brand=brands[0];
- const tails:string[]=[];
+ const tails:string[]=labelledCardTails(lines);
  for(const line of lines){
    // Never derive the tail from a full PAN. Masked, labelled endings remain candidates.
    if(containsSensitiveText(line))continue;
@@ -104,13 +105,15 @@ export function parseReceipt(raw:string,settings:Settings):Parsed {
  const header=lines.slice(0,Math.min(16,boundary));
  const merchantLabel=/^(?:merchant(?: name)?|store(?: name)?|outlet)\s*[:=]?\s*$/i;
  const usableStore=(v:string)=>!!v&&!!safe(v)&&/[A-Za-z]{3}/.test(v)&&!administrative.test(v)&&!addressLine.test(v)&&!summaryLine.test(v)&&!itemHeader.test(v)&&!moneyOnly.test(v)&&!receiptDateCandidates(v).length;
- const named=header.flatMap((line,i)=>{const m=line.match(/^(?:merchant(?: name)?|store(?: name)?|outlet)\s*[:=]\s*(.+)$/i);const value=m?.[1]||(merchantLabel.test(line)?header[i+1]||'':'');return usableStore(value)?[trimDecoration(value)]:[];});
+ const named=lines.flatMap((line,i)=>{const m=line.match(/^(?:merchant(?: name)?|store(?: name)?|outlet)\s*[:=]\s*(.+)$/i);const value=m?.[1]||(merchantLabel.test(line)?lines[i+1]||'':'');return usableStore(value)?[trimDecoration(value)]:[];});
  if(new Set(named).size===1)r.store=named[0];
  else if(!named.length){const store=header.find(l=>usableStore(l)&&!merchantLabel.test(l)&&!/^(?:merchant(?: name)?|store(?: name)?|outlet)\s*[:=]/i.test(l)&&!/^\s*(?:SGD|USD|JPY|S\$|US\$)\s*$/i.test(l)&&!/[\d]{7}/.test(l));r.store=safe(store||'');}
  const footerStores=[...new Set(lines.flatMap((line,i)=>{const m=line.match(/^[^A-Za-z0-9]*THANK\s+YOU\s+FOR\s+SH[O0C]?PPING\s+AT(?:\s+(.+))?$/i);const value=m?(m[1]||lines[i+1]||''):'';return usableStore(value)?[trimDecoration(value)]:[];}))];
  if(!named.length&&footerStores.length===1)r.store=footerStores[0];
  uncertain.push('store','address');
- r.address=header.filter(l=>addressLine.test(l)).map(safe).filter(Boolean).join(', ');
+ const addresses=labelledAddresses(lines);
+ r.address=addresses.length===1?addresses[0]:addresses.length>1?'':header.filter(l=>addressLine.test(l)).map(safe).filter(Boolean).join(', ');
+ if(addresses.length>1)warnings.push('住所候補が複数あります。原本の店舗住所を確認してください。');
  const transactions=lines.flatMap(l=>{const m=l.match(/^(?:receipt|invoice|transaction|bill)\s*(?:(?:no\.?|number|id|#)\s*[.:#]*|[.:#]+)\s*([\w/-]+)(?=\s*$|\s+date\s*[.:#])/i);return m&&safe(m[1])?[m[1]]:[];});if(new Set(transactions).size===1)r.transaction=transactions[0];else if(transactions.length>1)uncertain.push('transaction');
  if(/(?:inclusive\s+of|includes?|incl\.?)\s+(?:gst|tax)/i.test(text)||/(?:gst|tax)\s+(?:included|inclusive)/i.test(text))r.taxMode='included';else if(/(?:exclusive\s+of|excl\.?)\s+(?:gst|tax)/i.test(text))r.taxMode='excluded';
  let inItems=false,quantityAfterName=false;
