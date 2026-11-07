@@ -1,7 +1,8 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useMemo,useState} from 'react';
 import {createRecordId,identifyPayer,reconciliation,validateReceipt,captureSourceLabels,receiptImages,withoutImages,type Receipt,type ReceiptPhoto,type Settings,type Payer} from './model';
 import type {OcrResult} from './ocr';
 import {parseReceipt,fillMissingFields} from './parser';
+import {receiptDateCandidates} from './receipt-dates';
 export function BlobImage({blob}:{blob:Blob}) {
  const [url,setUrl]=useState('');
  useEffect(()=>{const u=URL.createObjectURL(blob);setUrl(u);return()=>URL.revokeObjectURL(u);},[blob]);
@@ -11,6 +12,7 @@ type Props={initial:Receipt;settings:Settings;source?:Blob;sourcePhotos?:Receipt
 export default function Editor({initial,settings,source,sourcePhotos,ocr,warnings=[],uncertain=[],onSave,onCancel,onDelete}:Props) {
  const [r,setR]=useState(initial),[keep,setKeep]=useState(receiptImages(initial).length>0),[checked,setChecked]=useState(false),[error,setError]=useState(''),[saving,setSaving]=useState(false);
  const [ocrText,setOcrText]=useState(ocr?.text||''),[reparseMessage,setReparseMessage]=useState('');
+ const dateCandidates=useMemo(()=>receiptDateCandidates(ocrText),[ocrText]);
  const photos=sourcePhotos||initial.photos;
  const visiblePhotos=photos?.filter(p=>p.image);
  const images=photos?photos.flatMap(p=>p.image?[p.image]:[]):source?[source]:receiptImages(initial);
@@ -35,7 +37,7 @@ export default function Editor({initial,settings,source,sourcePhotos,ocr,warning
  {ocr&&<details><summary>認識したテキスト（一時表示）</summary><textarea aria-label="OCR結果" value={ocrText} maxLength={100000} onChange={e=>setOcrText(e.target.value)}/><p className="muted">文字は読めているのに欄が空いている場合は、ここで改行や文字を直して再反映できます。入力済みの欄は維持し、明細は0件のときだけ取り込みます。</p><button className="secondary" disabled={saving} onClick={()=>{const candidate=parseReceipt(ocrText,settings);setR(current=>fillMissingFields(current,candidate.receipt,settings));setChecked(false);setReparseMessage('空欄へ再反映しました。原本と照合してください。');}}>空欄へ再反映</button>{reparseMessage&&<p role="status">{reparseMessage}</p>}<p className="muted">全文と修正したテキストは保存・送信されません。信頼度は最初の画像全体のOCR値で、項目の正しさを保証しません。</p></details>}
  </aside><div className="panel form-panel"><div className="notice">{(warnings.length?warnings:['内容を確認して保存してください。']).map((w,i)=><p key={i}>{w}</p>)}</div>
  <div className="notice"><b>写真の日時{photos&&photos.length>1?'（先頭の写真）':''}</b><p>{captureSourceLabels[r.captureSource||'unknown']}{r.captureSource==='camera'?'。シャッター時刻ではなく、撮影後アプリに戻った時刻です。':''}</p>{field('capturedAt','撮影日時','text','例：2026-11-07T14:30:00+08:00',true)}<p className="muted">末尾の +08:00 はシンガポール、+09:00 は日本の時差です。時差が付いていない写真はタイムゾーン不明として扱います。</p><p>取り込み日時：<time>{r.importedAt||'記録なし'}</time></p></div>
- <div className="fields">{field('store','店舗名','text','店舗名を入力',true)}{field('date','取引日付','date')}{field('time','時刻','time')}{field('address','店舗住所','text','住所を入力',true)}
+ <div className="fields">{field('store','店舗名','text','店舗名を入力',true)}{field('date','取引日付','date')}{field('time','時刻','time')}{ocr&&dateCandidates.length>0&&(dateCandidates.some(c=>c.needsCentury||c.ambiguousOrder)||dateCandidates.length>1||!r.date)&&<div className="wide notice" aria-label="取引日付の候補"><b>読み取った日付から選ぶ</b><p>原本に合う日付をタップすると反映します。年が2桁の場合は20xx年の候補です。別の西暦なら日付欄で修正してください。</p><div className="actions">{dateCandidates.slice(0,20).map(c=><button type="button" className="secondary" key={c.value} disabled={saving} aria-pressed={r.date===c.value} onClick={()=>update('date',c.value)}>{c.value} を反映<small>（読取：{c.printed}）</small></button>)}</div></div>}{field('address','店舗住所','text','住所を入力',true)}
  {field('total','支払金額')}<label><span>通貨</span><select aria-label="通貨" value={r.currency} onChange={e=>update('currency',e.target.value)}><option value="">未判定</option><option>SGD</option><option>JPY</option><option>USD</option></select></label>
  {field('subtotal','小計')}{field('discount','割引')}{field('tax','GST・税額')}<label><span>税区分</span><select value={r.taxMode} onChange={e=>update('taxMode',e.target.value)}><option value="unknown">未確認</option><option value="included">小計に税込み</option><option value="excluded">小計に税別</option></select></label>{field('service','サービス料')}{field('tip','チップ')}
  </div><div className="validation" aria-live="polite">{reconciliation(r).map((m,i)=><p key={i}>{m}</p>)}</div>

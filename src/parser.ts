@@ -1,13 +1,14 @@
+import {receiptDateCandidates} from './receipt-dates';
 import {createRecordId,emptyReceipt,identifyPayer,type Settings,type Receipt,type Item,containsSensitiveText} from './model';
 export type Parsed={receipt:Receipt;warnings:string[];uncertain:string[]};
 const safe=(s:string)=>containsSensitiveText(s)?'':s;
-const moneyToken='(?:\\d{1,3}(?:,\\d{3})+|\\d+)\\.\\d{2}';
+const moneyToken='(?:\\d{1,3}(?:,\\d{3})+|\\d+)\\s*\\.\\s*\\d{2}';
 const currencyToken='(?:SGD|USD|JPY|S\\$|US\\$|\\$)';
-const moneyEnd=new RegExp(`(?:${currencyToken}\\s*)?(-?${moneyToken})\\s*(?:${currencyToken}|[A-Z])?$`,'i');
+const moneyEnd=new RegExp(`(^|[^\\w.,+\\-])(?:${currencyToken}\\s*)?(-?${moneyToken})\\s*(?:${currencyToken}|[A-Z])?$`,'i');
 const moneyOnly=new RegExp(`^\\s*(?:${currencyToken}\\s*)?(-?${moneyToken})\\s*(?:${currencyToken})?\\s*$`,'i');
-const stripMoney=(s:string)=>s.replace(/,/g,'');
-const moneyAtEnd=(s:string)=>{const m=moneyEnd.exec(s);return m?{amount:stripMoney(m[1]),prefix:s.slice(0,m.index).trim()}:null;};
-const normalizedLabel=(s:string)=>s.toLowerCase().replace(/\((?:incl\.?|including|inclusive\s+of)\s+(?:gst|tax)\)/g,'').replace(/\b(?:sgd|usd|jpy)\b|(?:us|s)?\$/g,'').replace(/\((\d+(?:\.\d+)?\s*%)\)/g,' $1 ').replace(/[:：=]/g,' ').replace(/\s+/g,' ').trim();
+const stripMoney=(s:string)=>s.replace(/[,\s]/g,'');
+const moneyAtEnd=(s:string)=>{const m=moneyEnd.exec(s);return m?{amount:stripMoney(m[2]),prefix:s.slice(0,m.index+m[1].length).trim()}:null;};
+const normalizedLabel=(s:string)=>s.toLowerCase().replace(/\bt[o0]ta[l1i!|](?=\s|$|[:.=])/g,'total').replace(/\((?:incl\.?|including|inclusive\s+of)\s+(?:gst|tax)\)/g,'').replace(/\b(?:sgd|usd|jpy)\b|(?:us|s)?\$/g,'').replace(/\((\d+(?:\.\d+)?\s*%)\)/g,' $1 ').replace(/[:：=]/g,' ').replace(/^[|*._-]+|[|*._-]+$/g,' ').replace(/\s+/g,' ').trim();
 type MoneyKey='total'|'subtotal'|'discount'|'tax'|'service'|'tip';
 function moneyLabel(s:string):MoneyKey|undefined {
  const label=normalizedLabel(s);
@@ -24,8 +25,9 @@ const administrative=/^(?:tax\s+invoice|receipt|invoice|transaction|date|time|te
 const addressLine=/(?:\b(?:road|street|avenue|drive|boulevard|lane|crescent|highway|gateway)\b|\b\d+\s+.+\b(?:rd|st|ave|dr|blvd|ln)\b|\b(?:singapore|s'pore)\s*\d{6}\b|^#\d{1,3}-\d{1,4}\b)/i;
 const summaryLine=/^(?:(?:\d+(?:\.\d+)?\s*%\s*)?(?:sub[ -]?total|grand\s+total|total|amount\s+(?:due|paid|payable)|net(?:t)?\s+total|balance|gst|vat|tax|service|svc|s\/c|discount|savings?|tip|gratuity)|cash\b|change\b|rounding\b|visa\b|master\s*card\b|amex\b|payment\b|tender\b|paid\b)/i;
 const itemHeader=/^tax\s+ite[nm]\s+total$|\b(?:item|description|product)\b.*\b(?:qty|quantity|price|amount|total)\b|^\s*(?:qty|quantity)\b.*\b(?:item|description|product)\b/i;
+const numericProductRow=/^[\d\s.,*x×@'’"=:+\-£OIlZz]*(?:EA|EN|EACH|PCS?)[\d\s.,*x×@'’"=:+\-£OIlZz]*$/i;
 function parseItem(line:string,quantityAfterName:boolean):Item|null {
- if(/^[\d\s.,*x×@'’"=:+\-£OIlZz]*(?:EA|EN|EACH|PCS?)[\d\s.,*x×@'’"=:+\-£OIlZz]*$/i.test(line))return null;
+ if(numericProductRow.test(line))return null;
  const last=moneyAtEnd(line);if(!last)return null;
  let name=last.prefix,quantity='',unitPrice='';
  // Two monetary columns: only the explicitly printed price is used, never total/quantity.
@@ -42,40 +44,47 @@ function parseItem(line:string,quantityAfterName:boolean):Item|null {
  return {id:createRecordId(),name,quantity,unitPrice,amount:last.amount};
 }
 function parseDates(lines:string[],warnings:string[],uncertain:string[]):string {
- const candidates:string[]=[];
- const months=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
- const add=(year:string,month:string,day:string)=>{const d=`${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}`;if(Number.isFinite(Date.parse(d))&&new Date(d).toISOString().slice(0,10)===d)candidates.push(d);};
- for(const line of lines){
-   if(/\b(?:expir|exp\.?\s*date|valid\s*(?:until|thru)|member\s*since)/i.test(line))continue;
-   for(const m of line.matchAll(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/g))add(m[1],m[2],m[3]);
-   for(const m of line.matchAll(/\b(\d{1,2})[/.\-](\d{1,2})[/.\-](20\d{2})\b/g)){
-     if(Number(m[2])>12&&Number(m[1])<=12)add(m[3],m[1],m[2]);
-     else {add(m[3],m[2],m[1]);if(Number(m[1])<=12&&Number(m[2])<=12){uncertain.push('date');warnings.push('日付は日/月/年の候補です。月/日/年との取り違えを確認してください。');}}
-   }
-   const month='(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*';
-   for(const m of line.matchAll(new RegExp(`\\b(\\d{1,2})[\\s-]+${month}[\\s,-]+(20\\d{2})\\b`,'gi')))add(m[3],String(months.indexOf(m[2].toLowerCase())+1),m[1]);
-   for(const m of line.matchAll(new RegExp(`\\b${month}[\\s-]+(\\d{1,2})(?:st|nd|rd|th)?[,\\s-]+(20\\d{2})\\b`,'gi')))add(m[3],String(months.indexOf(m[1].toLowerCase())+1),m[2]);
- }
- const unique=[...new Set(candidates)];if(unique.length>1){warnings.push('日付候補が複数あります。取引日付を確認してください。');uncertain.push('date');}return unique.length===1?unique[0]:'';
+ const candidates=receiptDateCandidates(lines.join('\n'));
+ const explicit=candidates.filter(c=>!c.needsCentury);
+ if(candidates.some(c=>c.needsCentury)){uncertain.push('date');warnings.push('年が2桁の日付は、取引日付の下に候補を表示しています。西暦を確認して選んでください。');}
+ if(explicit.length===1)return explicit[0].value;
+ if(explicit.length>1&&explicit.every(c=>c.ambiguousOrder)&&new Set(explicit.map(c=>c.printed)).size===1){uncertain.push('date');warnings.push('日付は日/月/年の候補です。取引日付の下で月/日/年との取り違えを確認できます。');return explicit[0].value;}
+ if(explicit.length>1){warnings.push('日付候補が複数あります。取引日付の下で原本に合う候補を選んでください。');uncertain.push('date');}
+ return '';
 }
+const trimDecoration=(s:string)=>s.replace(/^[|{}<>=_%:;~]+\s*|\s+[|{}<>=_%:;~]+$/g,'').trim();
+// Rejoin only explicit table headings split by OCR; never reorder arbitrary lines.
+function receiptLines(raw:string):string[]{
+ const input=raw.normalize('NFKC').split(/\r?\n/).map(l=>trimDecoration(l.replace(/[‐‑–—−]/g,'-').replace(/\u00a0/g,' '))).filter(Boolean),out:string[]=[];
+ for(let i=0;i<input.length;i++){
+   if(/^(?:tax\s+)?(?:item|description|product)(?:\s+(?:qty|quantity|unit|price))*$/i.test(input[i])&&/^(?:total|amount)$/i.test(input[i+1]||'')){out.push(input[i]+' '+input[++i]);}
+   else out.push(input[i]);
+ }
+ return out;
+}
+const retailCode=/^(?:GST|VAT|TAX)\s+[A-Z0-9-]*\d[A-Z0-9-]*\s+/i;
+const retailCodeOnly=/^(?:GST|VAT|TAX)\s+[A-Z0-9-]*\d[A-Z0-9-]*$/i;
+const productName=(s:string)=>s.replace(retailCode,'').trim();
 export function parseReceipt(raw:string,settings:Settings):Parsed {
  const r=emptyReceipt(),warnings=['OCRの候補です。原本と照合してから保存してください。'],uncertain:string[]=[];
  // Normalize typography only; do not turn O into 0 or guess missing digits.
- const lines=raw.normalize('NFKC').split(/\r?\n/).map(l=>l.replace(/[‐‑–—−]/g,'-').replace(/\u00a0/g,' ').trim()).filter(Boolean),text=lines.join('\n');
+ const lines=receiptLines(raw),text=lines.join('\n');
  const used=new Set<number>(),candidates:Record<MoneyKey,string[]>={total:[],subtotal:[],discount:[],tax:[],service:[],tip:[]};
  for(let i=0;i<lines.length;i++){
    const tail=moneyAtEnd(lines[i]),field=moneyLabel(tail?tail.prefix:lines[i]);
    if(!field)continue;
-   const next=moneyOnly.exec(lines[i+1]||'');
+   let nextIndex=i+1;
+   if(!tail&&new RegExp(`^(?:${currencyToken}|[-=_]{2,})$`,'i').test(lines[nextIndex]||''))nextIndex++;
+   const next=moneyOnly.exec(lines[nextIndex]||'');
    const amount=tail?.amount||(next?stripMoney(next[1]):'');
-   used.add(i);if(amount){candidates[field].push(field==='discount'?amount.replace(/^-/,''):amount);if(!tail&&next)used.add(i+1);}
+   used.add(i);if(amount){candidates[field].push(field==='discount'?amount.replace(/^-/,''):amount);if(!tail&&next)for(let j=i+1;j<=nextIndex;j++)used.add(j);}
  }
  const labels:Record<MoneyKey,string>={total:'支払金額',subtotal:'小計',discount:'割引',tax:'税額',service:'サービス料',tip:'チップ'};
  for(const field of Object.keys(candidates) as MoneyKey[]){const values=[...new Set(candidates[field].map(v=>Number(v)===0?'0.00':v))];if(values.length===1)r[field]=values[0];else if(values.length>1){warnings.push(`${labels[field]}の候補が複数あります。原本で確認してください。`);uncertain.push(field);}}
  const currencyMatches=[...new Set([...(text.match(/\b(?:SGD|USD|JPY)\b/gi)||[]).map(s=>s.toUpperCase()),...(/(?:^|[^A-Z])S\$/i.test(text)?['SGD']:[]),...(/\bUS\$/i.test(text)?['USD']:[])])];
  if(currencyMatches.length===1)r.currency=currencyMatches[0] as Receipt['currency'];
  r.date=parseDates(lines,warnings,uncertain);
- if(!r.date&&/\b\d{1,2}[\s/.-]+(?:[A-Za-z]{3,9}|\d{1,2})[\s/.-]+\d{2}\b/.test(text)){warnings.push('年が2桁の日付は西暦を確定できません。原本を確認して取引日付を入力してください。');uncertain.push('date');}
+
  const times=[...new Set(lines.filter(l=>!/^\s*(?:open|opening|hours|business hours|closed)\b/i.test(l)).flatMap(l=>[...l.matchAll(/\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\s*(AM|PM)?\b/gi)].flatMap(m=>{let h=Number(m[1]);if(m[3]){if(h<1||h>12)return [];h=h%12+(m[3].toUpperCase()==='PM'?12:0);}return [`${String(h).padStart(2,'0')}:${m[2]}`];})))];if(times.length===1)r.time=times[0];else if(times.length>1)uncertain.push('time');
  const brands=[...new Set((text.match(/\b(?:visa|master\s*card|amex|american express|unionpay|jcb)\b/gi)||[]).map(b=>b.toUpperCase().replace(/MASTER\s+CARD/,'MASTERCARD').replace('AMERICAN EXPRESS','AMEX')))];if(brands.length===1)r.brand=brands[0];
  const tails:string[]=[];
@@ -93,10 +102,12 @@ export function parseReceipt(raw:string,settings:Settings):Parsed {
  const moneyIndex=lines.findIndex((l,i)=>!used.has(i)&&!administrative.test(l)&&!addressLine.test(l)&&!!moneyAtEnd(l));
  const boundary=headerIndex>=0?headerIndex:moneyIndex>=0?moneyIndex:lines.length;
  const header=lines.slice(0,Math.min(16,boundary));
- const named=header.map(l=>l.match(/^(?:merchant(?: name)?|store(?: name)?|outlet)\s*:\s*(.+)$/i)?.[1]).filter((v):v is string=>!!v&&!!safe(v));
+ const merchantLabel=/^(?:merchant(?: name)?|store(?: name)?|outlet)\s*[:=]?\s*$/i;
+ const usableStore=(v:string)=>!!v&&!!safe(v)&&/[A-Za-z]{3}/.test(v)&&!administrative.test(v)&&!addressLine.test(v)&&!summaryLine.test(v)&&!itemHeader.test(v)&&!moneyOnly.test(v)&&!receiptDateCandidates(v).length;
+ const named=header.flatMap((line,i)=>{const m=line.match(/^(?:merchant(?: name)?|store(?: name)?|outlet)\s*[:=]\s*(.+)$/i);const value=m?.[1]||(merchantLabel.test(line)?header[i+1]||'':'');return usableStore(value)?[trimDecoration(value)]:[];});
  if(new Set(named).size===1)r.store=named[0];
- else if(named.length===0){const store=header.find(l=>/[A-Za-z]{3}/.test(l)&&!administrative.test(l)&&!addressLine.test(l)&&!summaryLine.test(l)&&!/^\s*(?:SGD|USD|JPY|S\$|US\$)\s*$/i.test(l)&&!/^\d/.test(l)&&!/[\d]{7}/.test(l));r.store=safe(store||'');}
- const footerStores=[...new Set(lines.flatMap(l=>{const m=l.match(/^[^A-Za-z0-9]*THANK\s+YOU\s+FOR\s+SHOPPING\s+AT\s+(.+)$/i);return m&&safe(m[1])?[m[1]]:[];}))];
+ else if(!named.length){const store=header.find(l=>usableStore(l)&&!merchantLabel.test(l)&&!/^(?:merchant(?: name)?|store(?: name)?|outlet)\s*[:=]/i.test(l)&&!/^\s*(?:SGD|USD|JPY|S\$|US\$)\s*$/i.test(l)&&!/[\d]{7}/.test(l));r.store=safe(store||'');}
+ const footerStores=[...new Set(lines.flatMap((line,i)=>{const m=line.match(/^[^A-Za-z0-9]*THANK\s+YOU\s+FOR\s+SH[O0C]?PPING\s+AT(?:\s+(.+))?$/i);const value=m?(m[1]||lines[i+1]||''):'';return usableStore(value)?[trimDecoration(value)]:[];}))];
  if(!named.length&&footerStores.length===1)r.store=footerStores[0];
  uncertain.push('store','address');
  r.address=header.filter(l=>addressLine.test(l)).map(safe).filter(Boolean).join(', ');
@@ -107,14 +118,17 @@ export function parseReceipt(raw:string,settings:Settings):Parsed {
    const line=lines[i];if(itemHeader.test(line)){inItems=true;quantityAfterName=/\b(?:item|description|product)\b.*\b(?:qty|quantity)\b/i.test(line);continue;}
    // GST is also a product tax-code column. A wrapped item requires an explicit
    // item table and a fully numeric quantity/unit/amount row, not just a GST prefix.
+   if(inItems&&retailCodeOnly.test(line))continue;
    const taxCodedItem=/^(?:GST|VAT|TAX)\s+[A-Z0-9-]*\d[A-Z0-9-]*\s+.+[A-Za-z]/i.test(line);
-   if(inItems&&!used.has(i)&&(!summaryLine.test(line)||taxCodedItem)&&!moneyAtEnd(line)&&/[A-Za-z]/.test(line)&&safe(line)&&!administrative.test(line)&&!addressLine.test(line)){
-     const next=lines[i+1]||'';
-     const numeric=new RegExp(`^(?:(\\d{1,4}(?:\\.\\d{1,3})?)\\s*(?:[x×@*'’]\\s*)?\\s+)?(?:(?:${currencyToken}\\s*)?(${moneyToken})\\s+(?:(?:EA|EACH|PCS?)\\s+)?)?(?:${currencyToken}\\s*)?(-?${moneyToken})\\s*(?:${currencyToken})?$`,'i').exec(next);
-     if(numeric&&!used.has(i+1)){r.items.push({id:createRecordId(),name:line,quantity:numeric[1]||'',unitPrice:numeric[2]?stripMoney(numeric[2]):'',amount:stripMoney(numeric[3])});uncertain.push('items');i++;continue;}
+   if(inItems&&!used.has(i)&&!numericProductRow.test(line)&&(!summaryLine.test(line)||taxCodedItem)&&!moneyAtEnd(line)&&/[A-Za-z]/.test(line)&&safe(line)&&!administrative.test(line)&&!addressLine.test(line)){
+     let next=lines[i+1]||'',consumed=1;
+     if(new RegExp(`^\\d{1,4}(?:\\.\\d{1,3})?\\s*[*x×@]{1,2}\\s*(?:${currencyToken}\\s*)?${moneyToken}\\s+(?:EA|EACH|PCS?)$`,'i').test(next)&&moneyOnly.test(lines[i+2]||'')){next+=' '+lines[i+2];consumed=2;}
+     const numeric=new RegExp(`^(?:(\\d{1,4}(?:\\.\\d{1,3})?)\\s*(?:[x×@*'’]{1,2}\\s*)?\\s+)?(?:(?:${currencyToken}\\s*)?(${moneyToken})\\s+(?:(?:EA|EACH|PCS?)\\s+)?)?(?:${currencyToken}\\s*)?(-?${moneyToken})\\s*(?:${currencyToken})?$`,'i').exec(next);
+     if(numeric&&!used.has(i+1)){r.items.push({id:createRecordId(),name:productName(line),quantity:numeric[1]||'',unitPrice:numeric[2]?stripMoney(numeric[2]):'',amount:stripMoney(numeric[3])});uncertain.push('items');i+=consumed;continue;}
      const partial=moneyAtEnd(next);
-     if(!used.has(i+1)&&partial&&/^[\d\s.,*x×@'’"=:+\-£OIlZz]*(?:(?:EA|EN|EACH|PCS?)[\d\s.,*x×@'’"=:+\-£OIlZz]*)?$/i.test(partial.prefix)&&partial.prefix.trim()){r.items.push({id:createRecordId(),name:line,quantity:'',unitPrice:'',amount:partial.amount});uncertain.push('items');warnings.push('数量・単価が読めない明細があります。金額だけを候補として取り込みました。');i++;continue;}
+     if(!used.has(i+1)&&partial&&/^[\d\s.,*x×@'’"=:+\-£OIlZz]*(?:(?:EA|EN|EACH|PCS?)[\d\s.,*x×@'’"=:+\-£OIlZz]*)?$/i.test(partial.prefix)&&partial.prefix.trim()){r.items.push({id:createRecordId(),name:productName(line),quantity:'',unitPrice:'',amount:partial.amount});uncertain.push('items');warnings.push('数量・単価が読めない明細があります。金額だけを候補として取り込みました。');i+=consumed;continue;}
    }
+   if(inItems&&taxCodedItem){const retail=parseItem(productName(line),quantityAfterName);if(retail){r.items.push(retail);uncertain.push('items');continue;}}
    if(used.has(i)||summaryLine.test(line)){
      // An unreadable product's following rows may still be valid items.
      if(!taxCodedItem)inItems=false;

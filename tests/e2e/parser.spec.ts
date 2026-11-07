@@ -13,3 +13,14 @@ test('corrected recognition text fills missing fields without discarding edits o
  await page.getByLabel('金額・通貨・支払者を原本と照合しました').check();await page.getByRole('button',{name:'確認して保存',exact:true}).click();await expect(page.locator('.receipt-row')).toHaveCount(1);await page.reload();await page.locator('.receipt-row').click();await expect(page.getByLabel('カード下4桁',{exact:true})).toHaveValue('0042');await expect(page.getByLabel('OCR結果',{exact:true})).toHaveCount(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
+
+test('four core fields map from a Singapore retail layout and short year requires a tap',async({page,context})=>{
+ const external:string[]=[];context.on('request',r=>{if(/^https?:/.test(r.url())&&!r.url().startsWith('http://127.0.0.1:4173/'))external.push(r.url());});
+ await page.goto('/');await page.getByRole('button',{name:'読み取り',exact:true}).click();await page.getByLabel('画像を選ぶ',{exact:true}).setInputFiles('tests/fixtures/retail-receipt.png');await page.getByRole('button',{name:'読み取り開始',exact:true}).click();await expect(page.locator('.metrics')).toBeVisible({timeout:150000});await test.info().attach('fictional-ocr',{body:await page.getByLabel('OCR結果',{exact:true}).inputValue(),contentType:'text/plain'});
+ await expect(page.getByLabel('店舗名',{exact:true})).toHaveValue('FICTIONAL SWEETS');await expect(page.getByLabel('支払金額',{exact:true})).toHaveValue('6.75');await expect(page.getByLabel('取引日付',{exact:true})).toHaveValue('');await expect(page.getByLabel('商品名 1',{exact:true})).toHaveValue('COCONUT BISCUIT');await expect(page.getByLabel('商品名 3',{exact:true})).toHaveValue('COCONUT BISCUIT');await expect(page.getByLabel('金額 2',{exact:true})).toHaveValue('-0.25');
+ await page.getByLabel('金額・通貨・支払者を原本と照合しました').check();await page.getByRole('button',{name:'2026-11-18 を反映',exact:false}).click();
+ await expect(page.getByLabel('取引日付',{exact:true})).toHaveValue('2026-11-18');await expect(page.getByRole('button',{name:'確認して保存',exact:true})).toBeDisabled();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:'test-results/field-mapping-date-candidate.png',fullPage:true});
+ await page.getByLabel('金額・通貨・支払者を原本と照合しました').check();await page.getByRole('button',{name:'確認して保存',exact:true}).click();await expect(page.locator('.receipt-row')).toHaveCount(1);await page.reload();await page.locator('.receipt-row').click();await expect(page.getByLabel('取引日付',{exact:true})).toHaveValue('2026-11-18');await expect(page.getByLabel('商品名 3',{exact:true})).toHaveValue('COCONUT BISCUIT');await expect(page.getByLabel('OCR結果',{exact:true})).toHaveCount(0);await expect(page.getByLabel('取引日付の候補',{exact:true})).toHaveCount(0);expect(external).toEqual([]);
+});

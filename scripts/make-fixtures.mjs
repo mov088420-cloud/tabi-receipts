@@ -15,3 +15,8 @@ await sharp(source).extract({left:0,top:0,width:1000,height:430}).png().toFile('
 await sharp(source).extract({left:0,top:325,width:1000,height:591}).png().toFile('tests/fixtures/receipt-bottom.png');
 await sharp(source).rotate(3,{background:'#fff'}).linear(.35,150).png().toFile('tests/fixtures/faint-skewed-receipt.png');
 await sharp({create:{width:2000,height:1516,channels:3,background:'#777'}}).composite([{input:source,left:500,top:300}]).png().toFile('tests/fixtures/receipt-with-background.png');
+// Fictional retail layout: intentionally separate merchant, table headings,
+// quantities and totals. No user receipt text or image is used in this fixture.
+const retailLines=['Merchant Name','FICTIONAL SWEETS','12 Example Gateway','Singapore 000000','Date: 18/Nov/26','','TAX ITEM','TOTAL','GST A123 COCONUT BISCUIT','1 * 3.50 EA','3.50','P001 - Promo -0.25','GST A123 COCONUT BISCUIT','1 * 3.50 EA 3.50','','TOTAL','SGD','6.75','','FICTIONAL TEST RECEIPT'];
+const retail=Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1100"><rect width="100%" height="100%" fill="white"/><g font-family="monospace" font-size="36" fill="#111">${retailLines.map((line,i)=>`<text x="60" y="${70+i*48}">${line}</text>`).join('')}</g></svg>`);
+await sharp(retail).png().toFile('tests/fixtures/retail-receipt.png');
