@@ -14,3 +14,7 @@ it('never scans beyond three nearby lines or takes a product price as an amount-
 it('omits amounts that cannot be stored in the explicit currency',()=>{expect(candidates('TOTAL JPY 3.50')).toEqual([]);expect(candidates('TOTAL SGD 999,999,999,999,999.00')).toEqual([]);});
 
 it('does not offer tax or change amounts printed on the same payment line',()=>{expect(candidates('Total SGD 14.50 GST 1.20').map(c=>c.value)).toEqual(['14.50']);expect(candidates('Total (incl GST) SGD 14.50').map(c=>c.value)).toEqual(['14.50']);});
+
+it.each(['＄７３．２５','$73.25','＄73.25'])('offers an unlabelled currency-only row %s for confirmation, not automatic assignment',line=>{expect(candidates(line)).toEqual([{value:'73.25',currency:'',printed:'$73.25',placement:'unlabelled'}]);expect(parseReceipt(line,initialSettings).receipt.total).toBe('');});
+it('keeps explicit payable evidence ahead of unrelated standalone prices',()=>{expect(candidates('TOTAL SGD 40.00\n$73.25').map(c=>c.value)).toEqual(['40.00']);expect(candidates('SGD73.25')[0]).toMatchObject({value:'73.25',currency:'SGD'});});
+it('does not offer unlabelled values belonging to explicit tax, change or product rows',()=>{for(const text of ['GST 9%\n$3.25','Change\n$3.25','$3.25\nGST 9%','Rice $3.25','73.25','＄73.OO'])expect(candidates(text)).toEqual([]);});

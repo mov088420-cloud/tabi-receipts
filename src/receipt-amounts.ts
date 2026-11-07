@@ -1,5 +1,5 @@
 import {containsSensitiveText,type Currency} from './model';
-export type PaymentCandidate={value:string;printed:string;currency:Currency;placement:'same-line'|'after-label'|'before-label'};
+export type PaymentCandidate={value:string;printed:string;currency:Currency;placement:'same-line'|'after-label'|'before-label'|'unlabelled'};
 const number='-?(?:\\d{1,3}(?:,\\d{3})+|\\d+)\\s*\\.\\s*\\d{2}';
 const currency='(?:SGD|USD|JPY|US\\$|S\\$|\\$)';
 const onlyAmount=new RegExp(`^(?:${currency}\\s*)?(${number})(?:\\s*${currency})?\\s*[)]?$`,'i');
@@ -7,7 +7,7 @@ const payable=/^(?:(?:grand|net|nett)\s+)?t[o0]ta[l1i!|](?=$|\s|[:=.])|^(?:amoun
 const nonPayment=/^t[o0]ta[l1i!|]\s+(?:quantity|qty|items?|savings?|discount|tax|gst|vat|service|points|cash|tender)\b/i;
 const normalize=(s:string)=>s.replace(/[,\s]/g,'');
 function currencies(text:string):Currency[]{
- return [...new Set([...(text.match(/\b(?:SGD|USD|JPY)\b/gi)||[]).map(s=>s.toUpperCase() as Currency),...(/(?:^|[^A-Z])S\$/i.test(text)?['SGD' as const]:[]),...(/\bUS\$/i.test(text)?['USD' as const]:[])])];
+ return [...new Set([...(text.match(/\b(?:SGD|USD|JPY)(?=\b|\d)/gi)||[]).map(s=>s.toUpperCase() as Currency),...(/(?:^|[^A-Z])S\$/i.test(text)?['SGD' as const]:[]),...(/\bUS\$/i.test(text)?['USD' as const]:[])])];
 }
 // These are explicit review choices, NEVER automatic total or currency guesses.
 // Amounts near a label can belong to another row; retain the original context
@@ -37,7 +37,17 @@ export function receiptPaymentCandidates(raw:string):PaymentCandidate[]{
      else if(payable.test(candidate)||/^(?:sub[ -]?total|gst|vat|tax|change|cash|discount|savings?)\b/i.test(candidate))break;
    }
  }
- const rank={'same-line':0,'after-label':1,'before-label':2};
+ // If no payable-labelled evidence survived, offer standalone currency amounts.
+ // This never fills the receipt automatically or treats a plain $ as SGD.
+ if(!found.length){
+   const otherLabel=/^(?:(?:sub[ -]?total|total\s+(?:tax|gst|quantity|qty|savings?|discount)|gst|vat|tax|cash(?:\s+tendered)?|change|discount|savings?|service(?:\s+charge)?|tips?)(?:\s+(?:@\s*)?\d+(?:\.\d+)?\s*%)?)\s*[:=]?$/i;
+   for(let i=0;i<lines.length;i++){
+     const match=onlyAmount.exec(lines[i]);
+     if(!match||!new RegExp(currency,'i').test(lines[i])||otherLabel.test(lines[i-1]||'')||otherLabel.test(lines[i+1]||''))continue;
+     add(match[1],i,i,'unlabelled');
+   }
+ }
+ const rank={'same-line':0,'after-label':1,'before-label':2,unlabelled:3};
  const seen=new Set<string>();
  return found.sort((a,b)=>rank[a.placement]-rank[b.placement]).filter(c=>{const key=c.value+'|'+c.currency;if(seen.has(key))return false;seen.add(key);return true;}).slice(0,8);
 }
