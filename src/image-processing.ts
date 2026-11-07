@@ -4,7 +4,7 @@ export const noCrop=():Crop=>({top:0,right:0,bottom:0,left:0});
 export const defaultImageOptions=():ImageOptions=>({rotation:0,contrast:false,crop:noCrop(),layout:'block',deskew:true});
 export const imageLimits={maxBytes:25*1024*1024,maxPixels:4_000_000,maxSide:6000};
 // Crop in the rotated photo's coordinates, before resizing: background must not consume the text's pixel budget.
-export function imageGeometry(w:number,h:number,options:ImageOptions,preview=false) {
+export function imageGeometry(w:number,h:number,options:ImageOptions,preview=false,detail=false) {
  if(!Number.isFinite(w)||!Number.isFinite(h)||w<=0||h<=0||![0,90,180,270].includes(options.rotation))throw new Error('画像サイズ・回転を確認してください。');
  const crop=options.crop||noCrop();
  if(Object.values(crop).length!==4||Object.values(crop).some(n=>!Number.isFinite(n)||n<0||n>45))throw new Error('切り取り範囲を確認してください。');
@@ -14,7 +14,7 @@ export function imageGeometry(w:number,h:number,options:ImageOptions,preview=fal
  const border=12;
  const pixels=preview?700_000:imageLimits.maxPixels;
  const side=preview?1400:imageLimits.maxSide;
- const scale=Math.min(preview?1:2,(preview?850:1500)/cw,Math.sqrt(pixels/(cw*ch)),(side-2*border)/Math.max(cw,ch));
+ const scale=Math.min(preview?1:detail?3:2,(preview?850:1500)/cw,Math.sqrt(pixels/(cw*ch)),(side-2*border)/Math.max(cw,ch));
  // Keep the canvas including its white border within the memory budget.
  const edge=2*border,linear=edge*(cw+ch),area=cw*ch,available=pixels-edge*edge;
  const safeScale=Math.min(scale,2*available/(linear+Math.sqrt(linear*linear+4*area*available)));

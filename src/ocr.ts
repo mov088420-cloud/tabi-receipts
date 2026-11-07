@@ -1,14 +1,16 @@
 import {createWorker,OEM,PSM,type Worker} from 'tesseract.js';
 import {imageGeometry,imageLimits,stretchContrast,enhanceFaintPrint,type ImageOptions} from './image-processing';
+import {receiptDateCandidates} from './receipt-dates';
+import {dateRetryLines,dateRecovery,type DateRecovery,type DateRead} from './date-recovery';
 export {imageLimits,type ImageOptions} from './image-processing';
 export type OcrProgress={status:string;progress:number};
-export type OcrResult={text:string;confidence:number;seconds:number;width:number;height:number;angle?:number;pages?:number};
-export async function prepareImage(file:Blob,options:ImageOptions,preview=false):Promise<HTMLCanvasElement> {
+export type OcrResult={text:string;confidence:number;seconds:number;width:number;height:number;angle?:number;pages?:number;dateRecovery?:DateRecovery};
+export async function prepareImage(file:Blob,options:ImageOptions,preview=false,detail=false):Promise<HTMLCanvasElement> {
  if(file.size>imageLimits.maxBytes)throw new Error('画像は25MB以下にしてください。');
  const url=URL.createObjectURL(file),img=new Image();let canvas:HTMLCanvasElement|undefined;
  try {
    img.src=url;await img.decode();const w=img.naturalWidth,h=img.naturalHeight;
-   const g=imageGeometry(w,h,options,preview);
+   const g=imageGeometry(w,h,options,preview,detail);
    canvas=document.createElement('canvas');canvas.width=g.width;canvas.height=g.height;
    const ctx=canvas.getContext('2d',{willReadFrequently:options.contrast||options.faint});
    if(!ctx)throw new Error('画像処理を開始できません。');
@@ -27,13 +29,13 @@ export async function prepareImage(file:Blob,options:ImageOptions,preview=false)
 }
 // One worker, one canvas and one recognition at a time, even for a multi-photo receipt.
 export async function recognizePages(photos:{file:Blob;options:ImageOptions}[],report:(p:OcrProgress)=>void,signal:AbortSignal):Promise<OcrResult[]> {
- let worker:Worker|undefined,canvas:HTMLCanvasElement|undefined,timer:ReturnType<typeof setTimeout>|undefined,index=0,abandoned=false;
+ let worker:Worker|undefined,canvas:HTMLCanvasElement|undefined,timer:ReturnType<typeof setTimeout>|undefined,index=0,abandoned=false,retrying=false;
  const base=new URL('./ocr/',new URL(import.meta.env.BASE_URL,location.href)).href;
  let rejectFailure:(e:Error)=>void=()=>{};
  const failure=new Promise<never>((_,reject)=>{rejectFailure=reject;});void failure.catch(()=>{});
  const abort=()=>{abandoned=true;void worker?.terminate();rejectFailure(new Error('OCRを中止しました。写真は残っています。'));};
  const resetTimer=()=>{clearTimeout(timer);timer=setTimeout(()=>{abandoned=true;void worker?.terminate();rejectFailure(new Error(`${index+1}枚目のOCRが3分以内に完了しませんでした。範囲を切り取るか、写真を撮り直してください。`));},180_000);};
- const progress=(status:string,n:number)=>{if(!abandoned)report({status:`${photos.length>1?`${index+1} / ${photos.length}枚 · `:''}${status}`,progress:(index+n)/photos.length});};
+ const progress=(status:string,n:number)=>{if(retrying)status='日付を拡大して再確認中';if(!abandoned)report({status:`${photos.length>1?`${index+1} / ${photos.length}枚 · `:''}${status}`,progress:(index+n)/photos.length});};
  signal.addEventListener('abort',abort,{once:true});
  try {
    if(!photos.length||photos.length>6)throw new Error('読み取る写真は1〜6枚で指定してください。');
@@ -53,8 +55,41 @@ export async function recognizePages(photos:{file:Blob;options:ImageOptions}[],r
      const photo=photos[index];canvas=await prepareImage(photo.file,photo.options);
      if(signal.aborted||abandoned)throw new Error('OCRを中止しました。写真は残っています。');
      await Promise.race([worker.setParameters({tessedit_pageseg_mode:photo.options.layout==='auto'?PSM.AUTO:PSM.SINGLE_BLOCK,preserve_interword_spaces:'1',user_defined_dpi:'300'}),failure]);
-     const {data}=await Promise.race([worker.recognize(canvas,{rotateAuto:photo.options.deskew!==false}),failure]);
-     outputs.push({text:data.text,confidence:data.confidence,seconds:(performance.now()-start)/1000,width:canvas.width,height:canvas.height,angle:(data.rotateRadians||0)*180/Math.PI});
+     const {data}=await Promise.race([worker.recognize(canvas,{rotateAuto:photo.options.deskew!==false},{text:true,blocks:true}),failure]);
+     const width=canvas.width,height=canvas.height;
+     let recovery:DateRecovery|undefined;
+     if(data.text.trim()&&!receiptDateCandidates(data.text).length){
+       retrying=true;progress('日付を拡大して再確認中',.95);
+       const reads:DateRead[]=[];let attempts=0;
+       // Re-decode at higher magnification within the same 4 MP cap. Release the
+       // primary canvas first; only this image and one <=1 MP line crop coexist.
+       canvas.width=1;canvas.height=1;canvas=await prepareImage(photo.file,{...photo.options,contrast:true},false,true);
+       if(signal.aborted||abandoned)throw new Error('OCRを中止しました。');
+       // Obtain boxes without deskew so they match the pixels cropped below.
+       await Promise.race([worker.setParameters({tessedit_pageseg_mode:PSM.AUTO}),failure]);
+       const layout=(await Promise.race([worker.recognize(canvas,{rotateAuto:false},{text:true,blocks:true}),failure])).data;attempts++;
+       reads.push({text:layout.text,confidence:layout.confidence});
+       const lines=dateRetryLines(layout.blocks?.flatMap(b=>b.paragraphs.flatMap(p=>p.lines))||[],canvas.width,canvas.height);
+       for(const line of lines){
+         const b=line.bbox,x=Math.max(0,b.x0-12),y=Math.max(0,b.y0-10),w=Math.min(canvas.width-x,b.x1-b.x0+24),h=Math.min(canvas.height-y,b.y1-b.y0+20);
+         const scale=Math.min(3,2500/w,Math.sqrt(1_000_000/(w*h)));
+         for(const contrast of [false,true]){
+           if(signal.aborted||abandoned)throw new Error('OCRを中止しました。');
+           const detail=document.createElement('canvas');
+           try{
+             detail.width=Math.ceil(w*scale);detail.height=Math.ceil(h*scale);
+             const ctx=detail.getContext('2d',{willReadFrequently:contrast});if(!ctx)throw new Error('日付画像を調整できません。');
+             ctx.drawImage(canvas,x,y,w,h,0,0,detail.width,detail.height);
+             if(contrast){const pixels=ctx.getImageData(0,0,detail.width,detail.height);stretchContrast(pixels.data);ctx.putImageData(pixels,0,0);}
+             await Promise.race([worker.setParameters({tessedit_pageseg_mode:PSM.SINGLE_LINE}),failure]);
+             const retry=(await Promise.race([worker.recognize(detail,{rotateAuto:false}),failure])).data;attempts++;
+             reads.push({text:retry.text,confidence:retry.confidence});
+           }finally{detail.width=1;detail.height=1;}
+         }
+       }
+       recovery=dateRecovery(reads,attempts);retrying=false;
+     }
+     outputs.push({dateRecovery:recovery,text:data.text,confidence:data.confidence,seconds:(performance.now()-start)/1000,width,height,angle:(data.rotateRadians||0)*180/Math.PI});
      canvas.width=1;canvas.height=1;canvas=undefined;progress('読み取り完了',1);
    }
    return outputs;

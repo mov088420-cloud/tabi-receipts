@@ -1,3 +1,4 @@
+import {mergeDateRecoveries} from './date-recovery';
 import type {OcrResult} from './ocr';
 export const textLines=(text:string)=>text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 // A suggestion only. Even an exact repeated line can be a legitimate repeat purchase.
@@ -12,5 +13,5 @@ export function joinPageResults(results:OcrResult[],skip:number[]):OcrResult {
    const lines=textLines(r.text),n=skip[i];if(!Number.isInteger(n)||n<0||n>lines.length||(i===0&&n!==0))throw new Error('重複行の範囲を確認してください。');
    return lines.slice(n).join('\n');
  });
- return {text:texts.join('\n'),confidence:Math.min(...results.map(r=>r.confidence)),seconds:results.reduce((s,r)=>s+r.seconds,0),width:Math.max(...results.map(r=>r.width)),height:Math.max(...results.map(r=>r.height)),pages:results.length};
+ return {dateRecovery:mergeDateRecoveries(results.map(r=>r.dateRecovery)),text:texts.join('\n'),confidence:Math.min(...results.map(r=>r.confidence)),seconds:results.reduce((s,r)=>s+r.seconds,0),width:Math.max(...results.map(r=>r.width)),height:Math.max(...results.map(r=>r.height)),pages:results.length};
 }

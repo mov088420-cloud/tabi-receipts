@@ -16,7 +16,7 @@ export default function DateRescan({disabled,onApply}:{disabled:boolean;onApply:
    try{
      const result=await recognize(file,{...defaultImageOptions(),contrast:!faint,faint},p=>{if(mounted.current)setProgress(p);},task.signal);
      if(!mounted.current||task.signal.aborted)return;
-     const dates=receiptDateCandidates(result.text);setCandidates(dates);
+     const dates=[...new Map([...receiptDateCandidates(result.text),...(result.dateRecovery?.candidates||[])].map(c=>[c.value,c])).values()];setCandidates(dates);
      setMessage(dates.length?'原本の日付と一致する候補を選んでください。':'日付を読み取れませんでした。ピントを合わせて撮り直すか、取引日付を手入力してください。');
    }catch(e){if(mounted.current)setMessage(task.signal.aborted?'日付の読み直しを中止しました。':e instanceof Error?e.message:'日付を読み取れませんでした。');}
    finally{controller.current=null;if(mounted.current)setBusy(false);}

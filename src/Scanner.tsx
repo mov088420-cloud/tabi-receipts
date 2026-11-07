@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {recognizePages,prepareImage,type OcrResult,type OcrProgress,type ImageOptions} from './ocr';
 import {defaultImageOptions,noCrop,type Crop} from './image-processing';
 import {joinPageResults,overlapSuggestion,textLines} from './receipt-pages';
+import {receiptDateCandidates} from './receipt-dates';
 import {parseReceipt,type Parsed} from './parser';
 import {emptyReceipt,maxReceiptPhotos,type Receipt,type ReceiptPhoto,type Settings} from './model';
 import Editor,{BlobImage} from './Editor';
@@ -33,6 +34,7 @@ export default function Scanner({settings,onSave,onDone,initialFiles=[]}:{settin
  function canChange(){if(busy)return false;return !(parsed||outputs)||confirm('未保存の読み取り結果と修正内容を破棄して、写真の調整に戻りますか？');}
  function review(results:OcrResult[],meta:ReceiptPhoto[],skips:number[],combine:boolean){
    const output=joinPageResults(results,skips),next=parseReceipt(output.text,settings);
+   if(!receiptDateCandidates(output.text).length&&output.dateRecovery?.automatic)next.receipt.date=output.dateRecovery.automatic;
    if(meta[0])Object.assign(next.receipt,meta[0],{image:undefined});
    if(combine)next.receipt.photos=meta.map(({image:_image,...p})=>p);
    if(combine&&results.length>1)next.warnings.push('複数の写真を1件にまとめました。写真の順番、明細の重複・抜け、最終合計を確認してください。写真ごとの金額は合算していません。');
