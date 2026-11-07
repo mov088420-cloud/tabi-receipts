@@ -1,5 +1,5 @@
 import {isPaymentLabel} from './payment-label';
-import {labelledCardTails,labelledAddresses,identityAddressLine} from './receipt-identity';
+import {labelledCardTails,labelledAddresses,identityAddressLine,normalizeCardMask,storesAboveAddresses} from './receipt-identity';
 import {receiptDateCandidates} from './receipt-dates';
 import {createRecordId,emptyReceipt,identifyPayer,type Settings,type Receipt,type Item,containsSensitiveText} from './model';
 export type Parsed={receipt:Receipt;warnings:string[];uncertain:string[]};
@@ -89,8 +89,8 @@ export function parseReceipt(raw:string,settings:Settings):Parsed {
 
  const times=[...new Set(lines.filter(l=>!/^\s*(?:open|opening|hours|business hours|closed)\b/i.test(l)).flatMap(l=>[...l.matchAll(/\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\s*(AM|PM)?\b/gi)].flatMap(m=>{let h=Number(m[1]);if(m[3]){if(h<1||h>12)return [];h=h%12+(m[3].toUpperCase()==='PM'?12:0);}return [`${String(h).padStart(2,'0')}:${m[2]}`];})))];if(times.length===1)r.time=times[0];else if(times.length>1)uncertain.push('time');
  const brands=[...new Set((text.match(/\b(?:visa|master\s*card|amex|american express|unionpay|jcb)\b/gi)||[]).map(b=>b.toUpperCase().replace(/MASTER\s+CARD/,'MASTERCARD').replace('AMERICAN EXPRESS','AMEX')))];if(brands.length===1)r.brand=brands[0];
- const tails:string[]=labelledCardTails(lines);
- for(const line of lines){
+ const cardLines=lines.map(normalizeCardMask),tails:string[]=labelledCardTails(cardLines);
+ for(const line of cardLines){
    // Never derive the tail from a full PAN. Masked, labelled endings remain candidates.
    if(containsSensitiveText(line))continue;
    for(const m of line.matchAll(/(?:[*Xx•#]{2,}[\s*-]*)+(\d{4})(?!\d|[\s-]+\d)|(?:ending\s+(?:in\s+)?|last\s*4\s*[:#]?\s*)(\d{4})(?!\d)/gi))tails.push(m[1]||m[2]);
@@ -107,10 +107,13 @@ export function parseReceipt(raw:string,settings:Settings):Parsed {
  const merchantLabel=/^(?:merchant(?: name)?|store(?: name)?|outlet)\s*[:=]?\s*$/i;
  const usableStore=(v:string)=>!!v&&!!safe(v)&&/[A-Za-z]{3}/.test(v)&&!administrative.test(v)&&!addressLine.test(v)&&!summaryLine.test(v)&&!itemHeader.test(v)&&!moneyOnly.test(v)&&!receiptDateCandidates(v).length;
  const named=lines.flatMap((line,i)=>{const m=line.match(/^(?:merchant(?: name)?|store(?: name)?|outlet)\s*[:=]\s*(.+)$/i);const value=m?.[1]||(merchantLabel.test(line)?lines[i+1]||'':'');return usableStore(value)?[trimDecoration(value)]:[];});
+ const addressStores=storesAboveAddresses(lines.slice(0,Math.min(40,boundary)),usableStore);
  if(new Set(named).size===1)r.store=named[0];
+ else if(!named.length&&addressStores.length===1)r.store=addressStores[0];
+ else if(!named.length&&addressStores.length>1){warnings.push('住所付近の店名候補が複数あります。原本で確認してください。');}
  else if(!named.length){const store=header.find(l=>usableStore(l)&&!merchantLabel.test(l)&&!/^(?:merchant(?: name)?|store(?: name)?|outlet)\s*[:=]/i.test(l)&&!/^\s*(?:SGD|USD|JPY|S\$|US\$)\s*$/i.test(l)&&!/[\d]{7}/.test(l));r.store=safe(store||'');}
  const footerStores=[...new Set(lines.flatMap((line,i)=>{const m=line.match(/^[^A-Za-z0-9]*THANK\s+YOU\s+FOR\s+SH[O0C]?PPING\s+AT(?:\s+(.+))?$/i);const value=m?(m[1]||lines[i+1]||''):'';return usableStore(value)?[trimDecoration(value)]:[];}))];
- if(!named.length&&footerStores.length===1)r.store=footerStores[0];
+ if(!named.length&&!addressStores.length&&footerStores.length===1)r.store=footerStores[0];
  uncertain.push('store','address');
  const addresses=labelledAddresses(lines);
  r.address=addresses.length===1?addresses[0]:addresses.length>1?'':header.filter(l=>addressLine.test(l)).map(safe).filter(Boolean).join(', ');

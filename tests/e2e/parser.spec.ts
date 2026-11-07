@@ -58,3 +58,13 @@ test('a date close-up retries OCR offline without replacing receipt fields or sa
  const stored=await page.evaluate(()=>new Promise<any[]>((resolve,reject)=>{const req=indexedDB.open('tabi-receipts');req.onsuccess=()=>{const db=req.result;const read=db.transaction('receipts').objectStore('receipts').getAll();read.onsuccess=()=>{resolve(read.result);db.close();};read.onerror=()=>reject(read.error);};}));
  expect(stored).toHaveLength(1);expect(stored[0].image).toBeUndefined();expect(stored[0].photos).toBeUndefined();expect(JSON.stringify(stored)).not.toContain('Date:');expect(external).toEqual([]);
 });
+
+test('maps a printed venue over logo noise and a reference-mark masked card, preserving the original OCR text',async({page,context})=>{
+ const external:string[]=[];context.on('request',r=>{if(/^https?:/.test(r.url())&&!r.url().startsWith('http://127.0.0.1:4173/'))external.push(r.url());});
+ await page.goto('/');await page.getByRole('button',{name:'読み取り',exact:true}).click();await page.getByLabel('画像を選ぶ',{exact:true}).setInputFiles('tests/fixtures/receipt.png');await page.getByRole('button',{name:'読み取り開始',exact:true}).click();await expect(page.getByLabel('支払金額',{exact:true})).toHaveValue('17.99',{timeout:150000});
+ for(const label of ['店舗名','店舗住所','カード下4桁'])await page.getByLabel(label,{exact:true}).fill('');
+ const raw='FXXL XYZ\nFICTIONAL HARBOUR\nRESTAURANT & BAR\n12 Fictional Quay\nSingapore 123456\nVISA ※※※※0042';
+ await page.getByText('認識したテキスト（一時表示）',{exact:true}).click();await page.getByLabel('OCR結果',{exact:true}).fill(raw);await page.getByRole('button',{name:'空欄へ再反映',exact:true}).click();
+ await expect(page.getByLabel('店舗名',{exact:true})).toHaveValue('FICTIONAL HARBOUR RESTAURANT & BAR');await expect(page.getByLabel('店舗住所',{exact:true})).toHaveValue('12 Fictional Quay, Singapore 123456');await expect(page.getByLabel('カード下4桁',{exact:true})).toHaveValue('0042');await expect(page.getByLabel('OCR結果',{exact:true})).toHaveValue(raw);
+ await page.getByLabel('金額・通貨・支払者を原本と照合しました').check();await page.getByRole('button',{name:'確認して保存',exact:true}).click();await expect(page.locator('.receipt-row')).toHaveCount(1);await page.reload();await page.locator('.receipt-row').click();await expect(page.getByLabel('店舗名',{exact:true})).toHaveValue('FICTIONAL HARBOUR RESTAURANT & BAR');await expect(page.getByLabel('カード下4桁',{exact:true})).toHaveValue('0042');await expect(page.getByLabel('OCR結果',{exact:true})).toHaveCount(0);expect(external).toEqual([]);
+});
