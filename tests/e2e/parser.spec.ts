@@ -24,3 +24,17 @@ test('four core fields map from a Singapore retail layout and short year require
  await page.screenshot({path:'test-results/field-mapping-date-candidate.png',fullPage:true});
  await page.getByLabel('金額・通貨・支払者を原本と照合しました').check();await page.getByRole('button',{name:'確認して保存',exact:true}).click();await expect(page.locator('.receipt-row')).toHaveCount(1);await page.reload();await page.locator('.receipt-row').click();await expect(page.getByLabel('取引日付',{exact:true})).toHaveValue('2026-11-18');await expect(page.getByLabel('商品名 3',{exact:true})).toHaveValue('COCONUT BISCUIT');await expect(page.getByLabel('OCR結果',{exact:true})).toHaveCount(0);await expect(page.getByLabel('取引日付の候補',{exact:true})).toHaveCount(0);expect(external).toEqual([]);
 });
+
+test('payment candidates need an explicit tap, preserve currency choices and persist only the chosen amount',async({page,context})=>{
+ const external:string[]=[];context.on('request',r=>{if(/^https?:/.test(r.url())&&!r.url().startsWith('http://127.0.0.1:4173/'))external.push(r.url());});
+ await page.goto('/');await page.getByRole('button',{name:'読み取り',exact:true}).click();await page.getByLabel('画像を選ぶ',{exact:true}).setInputFiles('tests/fixtures/receipt.png');await page.getByRole('button',{name:'読み取り開始',exact:true}).click();await expect(page.locator('.metrics')).toBeVisible({timeout:150000});
+ await page.getByLabel('支払金額',{exact:true}).fill('');await page.getByLabel('通貨',{exact:true}).selectOption('');
+ await page.getByText('認識したテキスト（一時表示）',{exact:true}).click();await page.getByLabel('OCR結果',{exact:true}).fill('14.50\n--\nTotal\nCard payment VISA 560 14.50 )');
+ await page.getByRole('button',{name:'空欄へ再反映',exact:true}).click();await expect(page.getByLabel('支払金額',{exact:true})).toHaveValue('');await expect(page.getByLabel('通貨',{exact:true})).toHaveValue('');await expect(page.getByLabel('支払金額の候補',{exact:true})).toBeVisible();
+ await page.getByLabel('金額・通貨・支払者を原本と照合しました').check();await page.getByRole('button',{name:'14.50 を支払金額に反映',exact:true}).click();await expect(page.getByLabel('支払金額',{exact:true})).toHaveValue('14.50');await expect(page.getByLabel('通貨',{exact:true})).toHaveValue('');await expect(page.getByRole('button',{name:'確認して保存',exact:true})).toBeDisabled();await expect(page.getByLabel('支払金額の候補',{exact:true})).toHaveCount(0);
+ // Currency from an explicit source cannot silently change a manually selected currency.
+ await page.getByLabel('支払金額',{exact:true}).fill('');await page.getByLabel('通貨',{exact:true}).selectOption('USD');await page.getByLabel('OCR結果',{exact:true}).fill('Total SGD 14.50\nCard payment VISA SGD 14.60');await expect(page.getByRole('button',{name:'14.50 SGD を支払金額に反映',exact:true})).toBeDisabled();
+ await page.getByLabel('通貨',{exact:true}).selectOption('');await page.getByRole('button',{name:'14.50 SGD を支払金額に反映',exact:true}).click();await expect(page.getByLabel('通貨',{exact:true})).toHaveValue('SGD');await expect(page.getByLabel('支払金額',{exact:true})).toHaveValue('14.50');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.getByLabel('金額・通貨・支払者を原本と照合しました').check();await page.getByRole('button',{name:'確認して保存',exact:true}).click();await expect(page.locator('.receipt-row')).toHaveCount(1);await page.reload();await page.locator('.receipt-row').click();await expect(page.getByLabel('支払金額',{exact:true})).toHaveValue('14.50');await expect(page.getByLabel('支払金額の候補',{exact:true})).toHaveCount(0);await expect(page.getByLabel('OCR結果',{exact:true})).toHaveCount(0);expect(external).toEqual([]);
+});

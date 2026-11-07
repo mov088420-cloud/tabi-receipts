@@ -3,6 +3,7 @@ import {createRecordId,identifyPayer,reconciliation,validateReceipt,captureSourc
 import type {OcrResult} from './ocr';
 import {parseReceipt,fillMissingFields} from './parser';
 import {receiptDateCandidates} from './receipt-dates';
+import {receiptPaymentCandidates} from './receipt-amounts';
 export function BlobImage({blob}:{blob:Blob}) {
  const [url,setUrl]=useState('');
  useEffect(()=>{const u=URL.createObjectURL(blob);setUrl(u);return()=>URL.revokeObjectURL(u);},[blob]);
@@ -13,6 +14,7 @@ export default function Editor({initial,settings,source,sourcePhotos,ocr,warning
  const [r,setR]=useState(initial),[keep,setKeep]=useState(receiptImages(initial).length>0),[checked,setChecked]=useState(false),[error,setError]=useState(''),[saving,setSaving]=useState(false);
  const [ocrText,setOcrText]=useState(ocr?.text||''),[reparseMessage,setReparseMessage]=useState('');
  const dateCandidates=useMemo(()=>receiptDateCandidates(ocrText),[ocrText]);
+ const paymentCandidates=useMemo(()=>receiptPaymentCandidates(ocrText),[ocrText]);
  const photos=sourcePhotos||initial.photos;
  const visiblePhotos=photos?.filter(p=>p.image);
  const images=photos?photos.flatMap(p=>p.image?[p.image]:[]):source?[source]:receiptImages(initial);
@@ -39,6 +41,7 @@ export default function Editor({initial,settings,source,sourcePhotos,ocr,warning
  <div className="notice"><b>写真の日時{photos&&photos.length>1?'（先頭の写真）':''}</b><p>{captureSourceLabels[r.captureSource||'unknown']}{r.captureSource==='camera'?'。シャッター時刻ではなく、撮影後アプリに戻った時刻です。':''}</p>{field('capturedAt','撮影日時','text','例：2026-11-07T14:30:00+08:00',true)}<p className="muted">末尾の +08:00 はシンガポール、+09:00 は日本の時差です。時差が付いていない写真はタイムゾーン不明として扱います。</p><p>取り込み日時：<time>{r.importedAt||'記録なし'}</time></p></div>
  <div className="fields">{field('store','店舗名','text','店舗名を入力',true)}{field('date','取引日付','date')}{field('time','時刻','time')}{ocr&&dateCandidates.length>0&&(dateCandidates.some(c=>c.needsCentury||c.ambiguousOrder)||dateCandidates.length>1||!r.date)&&<div className="wide notice" aria-label="取引日付の候補"><b>読み取った日付から選ぶ</b><p>原本に合う日付をタップすると反映します。年が2桁の場合は20xx年の候補です。別の西暦なら日付欄で修正してください。</p><div className="actions">{dateCandidates.slice(0,20).map(c=><button type="button" className="secondary" key={c.value} disabled={saving} aria-pressed={r.date===c.value} onClick={()=>update('date',c.value)}>{c.value} を反映<small>（読取：{c.printed}）</small></button>)}</div></div>}{field('address','店舗住所','text','住所を入力',true)}
  {field('total','支払金額')}<label><span>通貨</span><select aria-label="通貨" value={r.currency} onChange={e=>update('currency',e.target.value)}><option value="">未判定</option><option>SGD</option><option>JPY</option><option>USD</option></select></label>
+ {ocr&&!r.total&&paymentCandidates.length>0&&<div className="wide notice payment-candidates" aria-label="支払金額の候補"><b>読み取った支払金額から選ぶ</b><p>合計・支払いの行付近で読めた金額です。近くの商品金額の場合もあるため、原本の最終支払額を確認して選んでください。</p>{paymentCandidates.map((c,i)=><div key={c.value+'|'+c.currency}><p className="muted">読取：{c.printed}</p><button type="button" className="secondary" disabled={saving||!!r.currency&&!!c.currency&&r.currency!==c.currency} onClick={()=>{setR(current=>({...current,total:c.value,currency:current.currency||c.currency}));setChecked(false);}}>{c.value}{c.currency?' '+c.currency:''} を支払金額に反映</button>{r.currency&&c.currency&&r.currency!==c.currency&&<p>選択中の通貨と異なります。先に通貨欄を確認してください。</p>}{i<paymentCandidates.length-1&&<hr/>}</div>)}</div>}
  {field('subtotal','小計')}{field('discount','割引')}{field('tax','GST・税額')}<label><span>税区分</span><select value={r.taxMode} onChange={e=>update('taxMode',e.target.value)}><option value="unknown">未確認</option><option value="included">小計に税込み</option><option value="excluded">小計に税別</option></select></label>{field('service','サービス料')}{field('tip','チップ')}
  </div><div className="validation" aria-live="polite">{reconciliation(r).map((m,i)=><p key={i}>{m}</p>)}</div>
  <h3>支払いと利用者</h3><div className="fields">{field('payment','支払方法')}{field('brand','カードブランド')}{field('last4','カード下4桁')}{field('transaction','取引番号')}
