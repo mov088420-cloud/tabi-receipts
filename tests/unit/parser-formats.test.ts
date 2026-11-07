@@ -70,3 +70,34 @@ it('supports percentage parentheses and explicit unit-price markers',()=>{
  expect(r.tax).toBe('1.08');expect(r.items[0]).toMatchObject({name:'Rice',quantity:'2',unitPrice:'6.00'});
  expect(parse('Card XXXX 1234 5678').receipt.last4).toBe('');
 });
+
+describe('thermal retail receipts (fictional data only)',()=>{
+ it('keeps GST-coded items, EA units and repeated purchases, with promo adjustments',()=>{
+  const r=parse(`EXAMPLE SWEET SHOP
+12 Example Gateway
+#01-010
+Singapore 000000
+Receipt .: DEMO-123 Date .: 18-Nov-2026
+Time .: 14:35
+TAX ITEM TOTAL
+GST A123 COCONUT BISCUIT
+1 * 3.50 EA 3.50
+P001 - Promo -0.25
+GST A123 COCONUT BISCUIT
+1 * 3.50 EA 3.50
+P001 - Promo -0.25
+GST B456 COCOA BOX
+2 * 4.00 EA 8.00
+Total 14.50
+Card payment VISA SGD 14.50
+GST 9.00% of 14.50 = 1.20
+GST INCLUDED`).receipt;
+  expect(r).toMatchObject({store:'EXAMPLE SWEET SHOP',address:'12 Example Gateway, #01-010, Singapore 000000',transaction:'DEMO-123',date:'2026-11-18',time:'14:35',total:'14.50',tax:'1.20',taxMode:'included',currency:'SGD',brand:'VISA',last4:'',payer:'unknown',discount:''});
+  expect(r.items).toHaveLength(5);expect(r.items[0]).toMatchObject({name:'GST A123 COCONUT BISCUIT',quantity:'1',unitPrice:'3.50',amount:'3.50'});expect(r.items[2].name).toBe(r.items[0].name);expect(r.items[1]).toMatchObject({name:'P001 - Promo',amount:'-0.25'});expect(r.items[4]).toMatchObject({quantity:'2',unitPrice:'4.00',amount:'8.00'});expect(()=>validateReceipt(r)).not.toThrow();
+ });
+ it('keeps a legible amount but never repairs damaged quantity or unit digits',()=>{const p=parse('EXAMPLE SHOP\nTAX ITEN TOTAL\nGST A123 COCOA BOX\nI * Z.50 EA 5.00\nTOTAL SGD 5.00');expect(p.receipt.items).toHaveLength(1);expect(p.receipt.items[0]).toMatchObject({quantity:'',unitPrice:'',amount:'5.00'});expect(p.uncertain).toContain('items');});
+ it('does not turn GST summaries or registration numbers into items',()=>{const r=parse('EXAMPLE SHOP\nTAX ITEM TOTAL\nGST Reg No 123456\n1 * 2.00 EA 2.00\nGST 9% of 12.00 = 0.99\nTOTAL SGD 12.00').receipt;expect(r.items).toHaveLength(0);expect(r.tax).toBe('0.99');});
+ it('rejects conflicting payable totals, including the card payment row',()=>{const p=parse('TOTAL 18.90\nCard payment VISA SGD 18.00');expect(p.receipt.total).toBe('');expect(p.uncertain).toContain('total');});
+ it('can use an explicit footer merchant when a logo is missed, but preserves an explicit header merchant',()=>{expect(parse('EXAMPLE MALL\nTOTAL SGD 3.00\n% THANK YOU FOR SHOPPING AT FICTIONAL SWEETS').receipt.store).toBe('FICTIONAL SWEETS');expect(parse('Merchant Name: FICTIONAL BRANCH\nTHANK YOU FOR SHOPPING AT FICTIONAL GROUP').receipt.store).toBe('FICTIONAL BRANCH');});
+ it('explains why a two-digit year stays empty and never infers a hidden card',()=>{const p=parse('EXAMPLE SHOP\nDate .: 18-Nov-26\nCard payment VISA SGD 3.00');expect(p.receipt.date).toBe('');expect(p.warnings.join(' ')).toContain('年が2桁');expect(p.receipt.last4).toBe('');expect(p.receipt.payer).toBe('unknown');});
+});

@@ -1,5 +1,5 @@
 import {createWorker,OEM,PSM,type Worker} from 'tesseract.js';
-import {imageGeometry,imageLimits,stretchContrast,type ImageOptions} from './image-processing';
+import {imageGeometry,imageLimits,stretchContrast,enhanceFaintPrint,type ImageOptions} from './image-processing';
 export {imageLimits,type ImageOptions} from './image-processing';
 export type OcrProgress={status:string;progress:number};
 export type OcrResult={text:string;confidence:number;seconds:number;width:number;height:number;angle?:number;pages?:number};
@@ -10,7 +10,7 @@ export async function prepareImage(file:Blob,options:ImageOptions,preview=false)
    img.src=url;await img.decode();const w=img.naturalWidth,h=img.naturalHeight;
    const g=imageGeometry(w,h,options,preview);
    canvas=document.createElement('canvas');canvas.width=g.width;canvas.height=g.height;
-   const ctx=canvas.getContext('2d',{willReadFrequently:options.contrast});
+   const ctx=canvas.getContext('2d',{willReadFrequently:options.contrast||options.faint});
    if(!ctx)throw new Error('画像処理を開始できません。');
    ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
    ctx.save();ctx.beginPath();ctx.rect(g.border,g.border,canvas.width-2*g.border,canvas.height-2*g.border);ctx.clip();
@@ -19,7 +19,8 @@ export async function prepareImage(file:Blob,options:ImageOptions,preview=false)
    if(options.rotation===180)ctx.translate(w,h);
    if(options.rotation===270)ctx.translate(0,w);
    ctx.rotate(options.rotation*Math.PI/180);ctx.drawImage(img,0,0);ctx.restore();
-   if(options.contrast){const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);stretchContrast(pixels.data);ctx.putImageData(pixels,0,0);}
+   if(options.faint){const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);enhanceFaintPrint(pixels.data,canvas.width,canvas.height,16*g.scale);ctx.putImageData(pixels,0,0);}
+   if(options.contrast&&!options.faint){const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);stretchContrast(pixels.data);ctx.putImageData(pixels,0,0);}
    return canvas;
  }catch{if(canvas){canvas.width=1;canvas.height=1;}throw new Error('画像を開けません。JPEG・PNGで再度取り込むか、画像を小さくしてください。');}
  finally {img.src='';URL.revokeObjectURL(url);}
