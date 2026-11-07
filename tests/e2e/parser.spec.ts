@@ -40,3 +40,21 @@ test('payment candidates need an explicit tap, preserve currency choices and per
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.getByLabel('金額・通貨・支払者を原本と照合しました').check();await page.getByRole('button',{name:'確認して保存',exact:true}).click();await expect(page.locator('.receipt-row')).toHaveCount(1);await page.reload();await page.locator('.receipt-row').click();await expect(page.getByLabel('支払金額',{exact:true})).toHaveValue('14.50');await expect(page.getByLabel('支払金額の候補',{exact:true})).toHaveCount(0);await expect(page.getByLabel('OCR結果',{exact:true})).toHaveCount(0);expect(external).toEqual([]);
 });
+
+test('a date close-up retries OCR offline without replacing receipt fields or saving the supplemental image',async({page,context})=>{
+ const external:string[]=[];context.on('request',r=>{if(/^https?:/.test(r.url())&&!r.url().startsWith('http://127.0.0.1:4173/'))external.push(r.url());});
+ await page.goto('/');await expect(page.getByText('オフライン準備完了',{exact:true})).toBeVisible({timeout:60000});await context.setOffline(true);await page.reload();
+ await page.getByRole('button',{name:'読み取り',exact:true}).click();await page.getByLabel('撮影する',{exact:true}).setInputFiles('tests/fixtures/receipt.png');await page.getByRole('button',{name:'読み取り開始',exact:true}).click();await expect(page.getByLabel('支払金額',{exact:true})).toHaveValue('17.99',{timeout:150000});
+ const captured=await page.getByLabel('撮影日時',{exact:true}).inputValue(),originalText=await page.getByLabel('OCR結果',{exact:true}).inputValue();
+ await page.getByLabel('店舗名',{exact:true}).fill('Manually corrected store');await page.getByLabel('取引日付',{exact:true}).fill('');
+ await page.getByText('日付だけ読み直す',{exact:true}).click();
+ await page.getByLabel('日付部分の画像を選ぶ',{exact:true}).setInputFiles({name:'broken.png',mimeType:'image/png',buffer:Buffer.from('invalid image')});
+ await expect(page.getByText('画像を開けません。JPEG・PNGで再度取り込むか、画像を小さくしてください。',{exact:true})).toBeVisible({timeout:150000});
+ await page.getByLabel('日付部分の画像を選ぶ',{exact:true}).setInputFiles('tests/fixtures/date-closeup.png');
+ const choice=page.getByRole('button',{name:'2027-09-23 を取引日付に反映',exact:false});await expect(choice).toBeVisible({timeout:150000});await expect(page.getByLabel('取引日付',{exact:true})).toHaveValue('');
+ await page.getByLabel('金額・通貨・支払者を原本と照合しました').check();await choice.click();await expect(page.getByLabel('取引日付',{exact:true})).toHaveValue('2027-09-23');await expect(page.getByRole('button',{name:'確認して保存',exact:true})).toBeDisabled();
+ await expect(page.getByLabel('店舗名',{exact:true})).toHaveValue('Manually corrected store');await expect(page.getByLabel('支払金額',{exact:true})).toHaveValue('17.99');await expect(page.getByLabel('商品名 1',{exact:true})).toHaveValue('Chicken Rice');await expect(page.getByLabel('撮影日時',{exact:true})).toHaveValue(captured);await expect(page.getByLabel('OCR結果',{exact:true})).toHaveValue(originalText);
+ await page.getByLabel('原本画像をこの端末に保存する').uncheck();await page.getByLabel('金額・通貨・支払者を原本と照合しました').check();await page.getByRole('button',{name:'確認して保存',exact:true}).click();await expect(page.locator('.receipt-row')).toHaveCount(1);await page.reload();await page.locator('.receipt-row').click();await expect(page.getByLabel('取引日付',{exact:true})).toHaveValue('2027-09-23');await expect(page.getByText('原本画像はありません',{exact:true})).toBeVisible();await expect(page.getByLabel('読み直した日付の候補',{exact:true})).toHaveCount(0);
+ const stored=await page.evaluate(()=>new Promise<any[]>((resolve,reject)=>{const req=indexedDB.open('tabi-receipts');req.onsuccess=()=>{const db=req.result;const read=db.transaction('receipts').objectStore('receipts').getAll();read.onsuccess=()=>{resolve(read.result);db.close();};read.onerror=()=>reject(read.error);};}));
+ expect(stored).toHaveLength(1);expect(stored[0].image).toBeUndefined();expect(stored[0].photos).toBeUndefined();expect(JSON.stringify(stored)).not.toContain('Date:');expect(external).toEqual([]);
+});

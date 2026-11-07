@@ -20,3 +20,6 @@ await sharp({create:{width:2000,height:1516,channels:3,background:'#777'}}).comp
 const retailLines=['Merchant Name','FICTIONAL SWEETS','12 Example Gateway','Singapore 000000','Date: 18/Nov/26','','TAX ITEM','TOTAL','GST A123 COCONUT BISCUIT','1 * 3.50 EA','3.50','P001 - Promo -0.25','GST A123 COCONUT BISCUIT','1 * 3.50 EA 3.50','','TOTAL','SGD','6.75','','FICTIONAL TEST RECEIPT'];
 const retail=Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1100"><rect width="100%" height="100%" fill="white"/><g font-family="monospace" font-size="36" fill="#111">${retailLines.map((line,i)=>`<text x="60" y="${70+i*48}">${line}</text>`).join('')}</g></svg>`);
 await sharp(retail).png().toFile('tests/fixtures/retail-receipt.png');
+
+// Fictional close-up for the date-only retry; no user receipt content.
+await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="160"><rect width="100%" height="100%" fill="white"/><text x="50" y="100" font-family="monospace" font-size="54" fill="#111">Date: 23/09/2027</text></svg>')).png().toFile('tests/fixtures/date-closeup.png');

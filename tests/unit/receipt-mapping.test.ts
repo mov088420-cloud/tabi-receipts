@@ -4,6 +4,7 @@ import {receiptDateCandidates} from '../../src/receipt-dates';
 import {initialSettings,validateReceipt} from '../../src/model';
 const parse=(s:string)=>parseReceipt(s,initialSettings);
 describe('printed date candidates',()=>{
+ it('maps an unambiguous day/month/four-digit-year when present, but never invents a missing date',()=>{expect(parse('Date: 23/09/2027').receipt.date).toBe('2027-09-23');expect(parse('EXAMPLE SHOP\nTOTAL SGD 12.00').receipt.date).toBe('');});
  it.each(['18-Nov-26','18/Nov/26','18 November 26','Nov 18, 26','18.11.26'])('retains %s as a candidate requiring century confirmation',s=>{expect(parse(s).receipt.date).toBe('');expect(receiptDateCandidates(s)).toEqual([{value:'2026-11-18',printed:s,needsCentury:true,ambiguousOrder:false}]);});
  it('supports four-digit named years with slashes and existing historical dates',()=>{expect(parse('Date: 18/Nov/2026').receipt.date).toBe('2026-11-18');expect(parse('18-Nov-1999').receipt.date).toBe('1999-11-18');});
  it('does not invent digits in malformed dates or use an expiry date',()=>{expect(receiptDateCandidates('Date: 1X-Nov-26\nExpiry Date: 18-Nov-26')).toEqual([]);expect(receiptDateCandidates('31/02/26')).toEqual([]);expect(receiptDateCandidates('Date: 18-0ct-26')).toEqual([]);});
